@@ -66,6 +66,9 @@ let visibleFiles = [];
 let activeCardId = null;
 let draggedShareId = null;
 let previewShareId = null;
+// The trail as the server last returned it, so a receipt can quote the
+// events for one file.
+let activityEvents = [];
 let previewLastFocus = null;
 let shortcutsLastFocus = null;
 let cardMenuLastFocus = null;
@@ -84,6 +87,17 @@ function toB64(bytes) {
     out += String.fromCharCode.apply(null, arr.subarray(i, i + 0x8000));
   }
   return btoa(out);
+}
+
+// Two byte strings, compared in full and in constant time. A file key that
+// came back from two different wraps has to be exactly the same key.
+function sameBytes(a, b) {
+  const left = a instanceof ArrayBuffer ? new Uint8Array(a) : new Uint8Array(a.buffer || a);
+  const right = b instanceof ArrayBuffer ? new Uint8Array(b) : new Uint8Array(b.buffer || b);
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let i = 0; i < left.length; i++) diff |= left[i] ^ right[i];
+  return diff === 0;
 }
 
 function fromB64(b64) {
@@ -241,14 +255,20 @@ async function recoverKeyIfAsked(username) {
 }
 
 // The wrapped private key goes to the server so a lost device can be rescued.
-// The server holds it encrypted and cannot read it.
+// The server holds it encrypted and cannot read it. If the upload fails the
+// user must know, because this blob is the only way a new device can be
+// rescued, and the phrase is still shown either way.
 async function uploadBackup() {
   if (!myKeys || !myKeys.backup) return;
   try {
     await api('/api/keys/backup', { method: 'POST', body: myKeys.backup });
     showPhrase(myKeys.phrase);
   } catch (err) {
-    /* the backup is a convenience, not a requirement */
+    showPhrase(myKeys.phrase);
+    setMainStatus(
+      `Your recovery key could not be saved on the server: ${err.message}. Keep the phrase below somewhere safe; without it a new device cannot open your files.`,
+      'error'
+    );
   }
 }
 
@@ -316,14 +336,32 @@ async function initGoogleSignIn() {
 
 async function onGoogleCredential(response) {
   try {
-    const { pair, publicKeyB64 } = await generateKeyPair();
+    // A Google account gets the same three keys as a password account: the
+    // file key pair, the signing key and the recovery phrase. Without the
+    // phrase a Google user could never open a file on a second device.
+    const { pair, publicKeyB64 } = await generateKeyPair(true);
+    const signing = await KeyGuard.generateSigningKey();
+    const phrase = KeyGuard.randomPhrase(12);
+    const backup = await KeyGuard.wrapPrivateKey(pair.privateKey, phrase);
     const result = await api('/api/google-signin', {
       method: 'POST',
-      body: { idToken: response.credential, publicKey: publicKeyB64 },
+      body: {
+        idToken: response.credential,
+        publicKey: publicKeyB64,
+        signingKey: signing.publicKeyB64,
+      },
     });
     me = result.username;
     if (result.keyProvided) {
-      await idbPut(me, { privateKey: pair.privateKey, publicKey: pair.publicKey, publicKeyB64 });
+      await idbPut(me, {
+        privateKey: await nonExtractableCopy(pair),
+        publicKey: pair.publicKey,
+        publicKeyB64,
+        signingPrivateKey: signing.pair.privateKey,
+        signingPublicKeyB64: signing.publicKeyB64,
+        phrase,
+        backup,
+      });
     }
     myKeys = (await idbGet(me)) || null;
     showApp();
@@ -333,6 +371,8 @@ async function onGoogleCredential(response) {
         'This account was first used on another device, so this device holds no private key for it. Files sent to you cannot be decrypted here.',
         'error'
       );
+    } else {
+      await uploadBackup();
     }
   } catch (err) {
     $('auth-error').textContent = err.message;
@@ -521,7 +561,10 @@ function renderStorage() {
     }
   }
   const all = [...seen.values()];
-  const totalBytes = all.reduce((sum, share) => sum + (share.size || 0), 0);
+  // The server reports the bytes it really stored, so this panel counts
+  // ciphertext and not the size of the file that went in.
+  const storedOf = (share) => share.storedSize || share.size || 0;
+  const totalBytes = all.reduce((sum, share) => sum + storedOf(share), 0);
   $('stat-stored').textContent = formatSize(totalBytes);
 
   const breakdown = $('storage-breakdown');
@@ -537,7 +580,7 @@ function renderStorage() {
   const byExt = new Map();
   for (const share of all) {
     const ext = fileExtension(share.filename);
-    byExt.set(ext, (byExt.get(ext) || 0) + (share.size || 0));
+    byExt.set(ext, (byExt.get(ext) || 0) + storedOf(share));
   }
   const top = [...byExt.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
   for (const [ext, bytes] of top) {
@@ -695,7 +738,14 @@ async function startShareFromCard(shareId, recipientUsername) {
 }
 
 async function refresh() {
-  const list = await api('/api/users');
+  let list;
+  try {
+    list = await api('/api/users');
+  } catch (err) {
+    setMainStatus(`Could not load the workspace: ${err.message}`, 'error');
+    renderLoadFailure('The people list could not be loaded.');
+    return;
+  }
   users = list.users;
 
   const select = $('recipient');
@@ -717,11 +767,43 @@ async function refresh() {
   renderSkeletonCards();
   try {
     shares = await api('/api/shares');
+  } catch (err) {
+    setMainStatus(`Could not load your files: ${err.message}`, 'error');
+    renderLoadFailure('Your files could not be loaded.');
+    return;
   } finally {
     if ($('cards')) $('cards').removeAttribute('aria-busy');
   }
   await renderActivity();
   render();
+  // The watcher starts once there is something to watch, so the first poll
+  // cannot mistake the files already on screen for new arrivals.
+  startWatching();
+}
+
+// A failed load must not leave the skeleton placeholders on the screen with
+// nothing to say why. The reader gets a plain sentence and a way to try
+// again.
+function renderLoadFailure(message) {
+  const container = $('cards');
+  if (!container) return;
+  container.removeAttribute('aria-busy');
+  container.innerHTML = '';
+  const empty = document.createElement('div');
+  empty.className = 'cards__empty';
+
+  const line = document.createElement('p');
+  line.textContent = message;
+  empty.appendChild(line);
+
+  const again = document.createElement('button');
+  again.type = 'button';
+  again.className = 'btn btn--primary btn--small';
+  again.textContent = 'Try again';
+  again.addEventListener('click', () => refresh());
+  empty.appendChild(again);
+
+  container.appendChild(empty);
 }
 
 async function renderActivity() {
@@ -731,8 +813,10 @@ async function renderActivity() {
   try {
     events = (await api('/api/activity')).activity;
   } catch (err) {
+    $('trail-state').textContent = 'The activity feed could not be loaded.';
     return;
   }
+  activityEvents = events;
   try {
     const chain = await api('/api/activity/verify');
     $('trail-state').textContent = chain.intact
@@ -867,6 +951,67 @@ function expiryLabel(share) {
   if (hours < 48) return `expires in ${Math.round(hours)} h`;
   return `expires in ${Math.round(hours / 24)} days`;
 }
+
+/* ---------------- the workspace watches itself ---------------- */
+
+// A file that arrives while the page is open is announced, and a file that
+// expires says so without waiting for a click. The clock decides expiry, so
+// that part is worked out here rather than asked of the server.
+const WATCH_INTERVAL_MS = 20000;
+let watchTimer = null;
+let knownShareIds = new Set();
+
+function everyShare() {
+  return [...(shares.inbox || []), ...(shares.sent || []), ...(shares.starred || [])];
+}
+
+function startWatching() {
+  if (watchTimer) return;
+  knownShareIds = new Set(everyShare().map((share) => share.id));
+  watchTimer = setInterval(watch, WATCH_INTERVAL_MS);
+}
+
+async function watch() {
+  if (document.hidden || !$('cards')) return;
+
+  let expired = false;
+  for (const share of everyShare()) {
+    if (share.state === 'live' && share.expiresAt && share.expiresAt <= Date.now()) {
+      share.state = 'expired';
+      expired = true;
+    }
+  }
+  if (expired) render();
+
+  let list;
+  try {
+    list = await api('/api/shares');
+  } catch (err) {
+    return;
+  }
+  const inbox = list.inbox || [];
+  const sent = list.sent || [];
+  const arrived = inbox.filter((share) => !knownShareIds.has(share.id));
+  for (const share of [...inbox, ...sent]) knownShareIds.add(share.id);
+  if (!arrived.length) return;
+
+  const names = arrived.map((share) => share.filename).join(', ');
+  toast(
+    arrived.length === 1 ? `${arrived[0].filename} was shared with you.` : `${arrived.length} files were shared with you: ${names}`,
+    {
+      action: 'Open',
+      onAction: () => {
+        setView('inbox');
+        openShare(arrived[0].id);
+      },
+    }
+  );
+  await refresh();
+}
+
+// A way to force the watcher to run now. The test uses it, and so can anyone
+// who wants to see the arrival check without waiting for the timer.
+window.__watch = watch;
 
 function emptyMessageFor(currentView) {
   if (query || filterBy !== 'all') return 'No file matches that search';
@@ -1112,6 +1257,15 @@ function renderCards(files, direction) {
         revoke.type = 'button';
         revoke.textContent = 'Revoke';
         revoke.disabled = file.state !== 'live' || Boolean(file.openedAt);
+        // A disabled button with no reason reads as a broken app, so it says
+        // why it cannot be pressed.
+        if (revoke.disabled) {
+          revoke.title = file.openedAt
+            ? 'The recipient already opened this file, so it cannot be revoked.'
+            : file.state === 'expired'
+              ? 'This file has already expired.'
+              : 'This file is not live.';
+        }
         revoke.addEventListener('click', () => revokeShare(file.id));
         actions.appendChild(revoke);
       }
@@ -1408,6 +1562,16 @@ async function openPreview(file) {
   $('preview-expiry').textContent = expiryLabel(file) || 'Never expires';
   $('preview-state').textContent = file.state || 'live';
   $('preview-key').textContent = 'checking...';
+  $('preview-digest').textContent = file.digest || 'not recorded';
+  $('preview-signature').textContent = file.signature
+    ? `ECDSA P-256 by ${file.from}`
+    : 'not signed';
+  const stored = file.storedSize || file.size || 0;
+  $('preview-stored').textContent = `${formatSize(stored)} of ciphertext (${stored} bytes)`;
+  $('preview-protection').textContent =
+    file.protected === 'password'
+      ? 'The recipient key and a password are both needed'
+      : "The recipient's public key only";
 
   $('preview-dialog').classList.remove('hidden');
   $('preview-close').focus();
@@ -1417,6 +1581,56 @@ async function openPreview(file) {
   const print = await fingerprint(publicKey);
   if (previewShareId === file.id) {
     $('preview-key').textContent = print;
+  }
+}
+
+// The receipt is what a reviewer can read: the whole chain for one file, in
+// plain text, with the events the audit trail holds for it.
+function receiptFor(file) {
+  const stored = file.storedSize || file.size || 0;
+  const lines = [
+    'SECURESHARE SECURITY RECEIPT',
+    `File:        ${file.filename}`,
+    `From:        ${file.from}`,
+    `To:          ${file.to}`,
+    `Permission:  ${file.permission === 'view' ? 'view only' : 'view and download'}`,
+    `Sent:        ${new Date(file.createdAt).toLocaleString()}`,
+    `Expires:     ${expiryLabel(file) || 'never'}`,
+    `State:       ${file.state || 'live'}`,
+    `Original:    ${file.size} bytes`,
+    `Stored:      ${stored} bytes of ciphertext`,
+    'Cipher:      AES-GCM 256, the key wrapped to the recipient RSA-OAEP 2048 public key',
+    `Protection:  ${file.protected === 'password' ? 'recipient key and password' : 'recipient key only'}`,
+    `Fingerprint: ${file.digest || 'not recorded'}`,
+    `Signature:   ${file.signature ? `ECDSA P-256 by ${file.from}` : 'not signed'}`,
+  ];
+  const events = (activityEvents || []).filter((event) => event.shareId === file.id);
+  if (events.length) {
+    lines.push('Events:');
+    for (const event of events.slice().reverse()) {
+      lines.push(`  ${new Date(event.ts).toLocaleString()}  ${event.type} by ${event.actor}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+async function copyReceipt(file) {
+  const text = receiptFor(file);
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('The security receipt is on the clipboard.');
+  } catch (err) {
+    // A browser that will not write to the clipboard still lets the text be
+    // selected by hand.
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    const copied = document.execCommand('copy');
+    area.remove();
+    toast(copied ? 'The security receipt is on the clipboard.' : 'The receipt could not be copied.');
   }
 }
 
@@ -1557,13 +1771,24 @@ async function decryptShareBytes(id) {
 
   let aes;
   if (meta.protected === 'password') {
-    // The file key was wrapped with the password as well, so it cannot be
-    // opened at all without it.
+    // The file key was wrapped twice: to the recipient's public key and to
+    // the password. Both are needed, and both must name the same key.
     const password = await askPassword(
       'The sender protected this file with a password. Ask them for it.'
     );
     if (!password) throw new Error('the password is needed to open this file');
-    aes = await KeyGuard.unwrapWithPassword(meta.wrappedKey, meta.passwordSalt, password);
+    const rawAes = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, myKeys.privateKey, fromB64(meta.wrappedKey));
+    let fromPassword;
+    try {
+      fromPassword = await KeyGuard.unwrapWithPassword(meta.passwordWrappedKey, meta.passwordSalt, password);
+    } catch (err) {
+      throw new Error('that password does not open this file');
+    }
+    const passwordRaw = new Uint8Array(await crypto.subtle.exportKey('raw', fromPassword));
+    if (!sameBytes(rawAes, passwordRaw)) {
+      throw new Error('the two keys for this file do not match, so it was not opened');
+    }
+    aes = await crypto.subtle.importKey('raw', rawAes, { name: 'AES-GCM' }, false, ['decrypt']);
   } else {
     const rawAes = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, myKeys.privateKey, fromB64(meta.wrappedKey));
     aes = await crypto.subtle.importKey('raw', rawAes, { name: 'AES-GCM' }, false, ['decrypt']);
@@ -1656,7 +1881,10 @@ async function openShare(id) {
         verified && signed !== false ? 'ok' : 'error'
       );
     }
-    URL.revokeObjectURL(url);
+    // The new tab loads the blob asynchronously, so the URL has to outlive the
+    // click that opened it. Revoking it in the same tick leaves the tab with
+    // a dead address.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
     const toastParts = ['Decrypted'];
     if (verified) toastParts.push('verified');
     if (signed === true) toastParts.push('signed');
@@ -1920,6 +2148,10 @@ function bindEvents() {
   $('preview-dialog').addEventListener('click', (event) => {
     if (event.target === $('preview-dialog')) closePreview();
   });
+  $('preview-receipt').addEventListener('click', () => {
+    const file = findShareById(previewShareId);
+    if (file) copyReceipt(file);
+  });
 
   $('recipient').addEventListener('change', showRecipientKey);
 
@@ -1985,24 +2217,30 @@ function bindEvents() {
       const rawAes = await crypto.subtle.exportKey('raw', aes);
       const publicKey = await crypto.subtle.importKey('spki', fromB64(target.publicKey), RSA, false, ['encrypt']);
 
-      // The file key goes to the recipient's public key, and to the password as
-      // well when the sender asks for that extra protection.
+      // The file key always goes to the recipient's public key. When the sender
+      // asks for the password as well, the same key is wrapped a second time
+      // with the password, so the file needs the recipient's key and the
+      // password to open. Either one alone is not enough.
       const password = protection === 'password' ? $('share-password').value : '';
-      if (protection === 'password' && password.length < 4) {
-        throw new Error('Give the file a password of at least four characters.');
+      if (protection === 'password' && password.length < 10) {
+        throw new Error('Give the file a password of at least ten characters.');
       }
-      let wrappedKey;
+      const wrappedKey = toB64(await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, publicKey, rawAes));
+      let passwordWrappedKey = null;
       let passwordSalt = null;
       if (protection === 'password') {
         const wrapped = await KeyGuard.wrapWithPassword(aes, password);
-        wrappedKey = wrapped.wrappedKey;
+        passwordWrappedKey = wrapped.wrappedKey;
         passwordSalt = wrapped.salt;
-      } else {
-        wrappedKey = toB64(await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, publicKey, rawAes));
       }
 
-      // The signature covers the parties, the file and its fingerprint, so the
-      // recipient can prove who sent it.
+      // The moment the file dies is set here, not by the server, because the
+      // signature has to cover it and the recipient has to rebuild it.
+      const expiresAt = expiry ? Date.now() + expiry * 1000 : null;
+
+      // The signature covers the parties, the file, its fingerprint, the
+      // permission the sender chose and the expiry, so the recipient can prove
+      // who sent it and what it said.
       let signature = null;
       if (myKeys && myKeys.signingPrivateKey) {
         const payload = KeyGuard.sharePayload({
@@ -2012,6 +2250,8 @@ function bindEvents() {
           size: file.size,
           digest,
           iv: toB64(iv),
+          permission,
+          expiresAt,
         });
         signature = await KeyGuard.signShare(payload, myKeys.signingPrivateKey);
       }
@@ -2024,10 +2264,11 @@ function bindEvents() {
           filename: file.name,
           size: file.size,
           permission,
-          expiresIn: expiry,
+          expiresAt,
           digest,
           iv: toB64(iv),
           wrappedKey,
+          passwordWrappedKey,
           ciphertext: toB64(ciphertext),
           signature,
           protected: protection,

@@ -84,9 +84,21 @@ const KeyGuard = (() => {
   }
 
   // The signed payload is exactly what the recipient can rebuild from the share
-  // metadata, so the signature covers the file, the parties and the fingerprint.
+  // metadata, so the signature covers the file, the parties, the fingerprint,
+  // the permission the sender chose and the moment the file dies. A server
+  // that quietly turns "view only" into "view and download" breaks the
+  // signature instead of quietly granting it.
   function sharePayload(share) {
-    return [share.from, share.to, share.filename, share.size, share.digest || '', share.iv || ''].join('|');
+    return [
+      share.from,
+      share.to,
+      share.filename,
+      share.size,
+      share.digest || '',
+      share.iv || '',
+      share.permission || '',
+      share.expiresAt || '',
+    ].join('|');
   }
 
   async function signShare(payload, privateKey) {

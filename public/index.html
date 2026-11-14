@@ -41,105 +41,236 @@
 <main class="shell">
   <!-- AUTH -->
   <section id="auth" class="auth">
-    <h1>Send one file to one person</h1>
-    <p class="auth__claim">
-      Every user gets a key pair generated in their own browser. A file is encrypted before it
-      leaves the sender’s device, so the server stores ciphertext and nothing else.
-    </p>
-
-    <div id="explainer" class="explainer" aria-label="How it works">
-      <span class="tab">How it works</span>
-      <ol class="explainer__list">
-        <li class="explainer__step">
-          <span class="explainer__num" aria-hidden="true">1</span>
-          <span>Your key pair is made in this browser. The private key never leaves it.</span>
-        </li>
-        <li class="explainer__step">
-          <span class="explainer__num" aria-hidden="true">2</span>
-          <span>The file is encrypted before it leaves your device.</span>
-        </li>
-        <li class="explainer__step">
-          <span class="explainer__num" aria-hidden="true">3</span>
-          <span>The server stores ciphertext. It cannot read the file.</span>
-        </li>
-      </ol>
-    </div>
-
-    <div class="auth__panel">
-      <div class="tabs" id="tabs">
-        <button class="cell" id="tab-login" type="button" aria-pressed="true">Sign in</button>
-        <button class="cell" id="tab-register" type="button" aria-pressed="false">Register</button>
+    <div class="auth__hero">
+      <div class="auth__intro">
+        <span class="tab">Browser-encrypted file sharing</span>
+        <h1>Send one file to one person</h1>
+        <p class="auth__claim">
+          Every user gets a key pair generated in their own browser. A file is encrypted before it
+          leaves your device, so the server stores ciphertext and nothing else.
+        </p>
       </div>
 
-      <form id="login-form">
-        <div class="field">
-          <label class="route__label" for="login-username">Username</label>
-          <input class="input" id="login-username" autocomplete="username" required>
+      <div class="auth__action">
+        <div class="auth__panel">
+          <div class="tabs" id="tabs">
+            <button class="cell" id="tab-login" type="button" aria-pressed="true">Sign in</button>
+            <button class="cell" id="tab-register" type="button" aria-pressed="false">Register</button>
+          </div>
+
+          <form id="login-form">
+            <div class="field">
+              <label class="route__label" for="login-username">Username</label>
+              <input class="input" id="login-username" autocomplete="username" required>
+            </div>
+            <div class="field">
+              <label class="route__label" for="login-password">Password</label>
+              <input class="input" id="login-password" type="password" autocomplete="current-password" required>
+            </div>
+            <div class="field hidden" id="recovery-field">
+              <label class="route__label" for="recovery-phrase">Recovery phrase</label>
+              <input class="input" id="recovery-phrase" type="password" autocomplete="off">
+              <p class="note">
+                Only if this is a new device: your twelve word phrase restores the private key, so the
+                files sent to you can be opened again.
+              </p>
+            </div>
+            <p class="note">
+              <button id="recovery-toggle" class="linkish" type="button">Restore my key on a new device</button>
+            </p>
+            <button class="btn btn--primary" type="submit">Sign in</button>
+          </form>
+
+          <form id="register-form" class="hidden">
+            <div class="field">
+              <label class="route__label" for="register-username">Username</label>
+              <input class="input" id="register-username" autocomplete="username" required>
+            </div>
+            <div class="field">
+              <label class="route__label" for="register-email">Email</label>
+              <input class="input" id="register-email" type="email" autocomplete="email" required>
+            </div>
+            <div class="field">
+              <label class="route__label" for="register-password">Password</label>
+              <input class="input" id="register-password" type="password" autocomplete="new-password" minlength="8" required>
+            </div>
+            <div class="field hidden" id="register-access">
+              <label class="route__label" for="register-access-code">Demo access code</label>
+              <input class="input" id="register-access-code" autocomplete="off">
+            </div>
+            <p class="note">
+              Your key pair is generated in this browser when you register. The private key is stored
+              on this device and never sent to the server. We email you a 6-digit code to verify the
+              account.
+            </p>
+            <button class="btn btn--primary" type="submit">Create account</button>
+          </form>
+
+          <form id="verify-form" class="hidden">
+            <div class="field">
+              <span class="route__label">Verify</span>
+              <p id="verify-email" class="note"></p>
+            </div>
+            <div class="field">
+              <label class="route__label" for="verify-code">6-digit code</label>
+              <input class="input" id="verify-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
+            </div>
+            <p id="verify-note" class="note"></p>
+            <button class="btn btn--primary" type="submit">Verify and sign in</button>
+          </form>
+
+          <div id="google-block" class="hidden">
+            <p class="or">or</p>
+            <div id="google-button"></div>
+            <p id="google-note" class="note"></p>
+          </div>
+
+          <p id="auth-error" class="status status--error" role="alert"></p>
         </div>
-        <div class="field">
-          <label class="route__label" for="login-password">Password</label>
-          <input class="input" id="login-password" type="password" autocomplete="current-password" required>
+
+        <p class="auth__terms">Free, no card, and the server never sees the file.</p>
+      </div>
+    </div>
+
+    <section class="auth__section" aria-labelledby="work-heading">
+      <div class="auth__section-head">
+        <span class="tab">The workspace</span>
+        <h2 id="work-heading">What you sign into</h2>
+      </div>
+      <figure class="shot">
+        <img class="shot__img" src="shots/workspace.png" width="1262" height="804" alt="Signed-in SecureShare workspace showing Shared with me, Sent by me, and the ciphertext comparison panel">
+        <figcaption class="shot__caption">
+          The workspace with shared-with-me, sent-by-me, and the tamper-evident audit trail.
+        </figcaption>
+      </figure>
+    </section>
+
+    <section class="auth__section" aria-labelledby="moments-heading">
+      <div class="auth__section-head">
+        <span class="tab">How a share moves</span>
+        <h2 id="moments-heading">Three moments from send to receipt</h2>
+      </div>
+      <div class="moments">
+        <article class="moment">
+          <div class="moment__body">
+            <h3>Encrypted in your browser</h3>
+            <p>
+              Before upload begins, your browser hashes the file, encrypts it with a fresh 256-bit
+              AES-GCM key, and wraps that key to the recipient’s RSA-OAEP public key.
+            </p>
+          </div>
+          <div class="moment__frame">
+            <img class="moment__img moment__img--send" src="shots/encrypted.png" width="1247" height="2185" alt="New share panel with file chooser, recipient public key fingerprint, permission, self-destruct timer, and Encrypt and send button">
+          </div>
+        </article>
+
+        <article class="moment">
+          <div class="moment__body">
+            <h3>The server holds only ciphertext</h3>
+            <p>
+              Only the encrypted bytes, wrapped key, IV, and share metadata reach the server, shown
+              beside the original header bytes in the cipher strip.
+            </p>
+          </div>
+          <div class="moment__frame moment__frame--cipher">
+            <img class="moment__img moment__img--cipher" src="shots/encrypted.png" width="1247" height="2185" alt="What the server actually stored panel comparing your file bytes with the ciphertext stored on the server">
+          </div>
+        </article>
+
+        <article class="moment">
+          <div class="moment__body">
+            <h3>Proved afterwards</h3>
+            <p>
+              After decryption, the recipient’s browser recomputes the SHA-256 fingerprint and
+              verifies the sender’s ECDSA signature, marking the card verified.
+            </p>
+          </div>
+          <div class="moment__frame">
+            <img class="moment__img moment__img--verified" src="shots/verified.png" width="1262" height="804" alt="Recipient inbox showing syllabus.pdf marked verified after decryption and fingerprint check">
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="auth__section" aria-labelledby="code-heading">
+      <div class="auth__section-head">
+        <span class="tab">The code</span>
+        <h2 id="code-heading">Real browser cryptography, not promises</h2>
+      </div>
+      <div class="code-sample">
+        <div class="code-sample__head">
+          <span>Sample: browser encryption before upload</span>
+          <span class="code-sample__ref">public/app.js &middot; the send path</span>
         </div>
-        <div class="field hidden" id="recovery-field">
-          <label class="route__label" for="recovery-phrase">Recovery phrase</label>
-          <input class="input" id="recovery-phrase" type="password" autocomplete="off">
-          <p class="note">
-            Only if this is a new device: your twelve word phrase restores the private key, so the
-            files sent to you can be opened again.
+        <pre class="code-sample__pre"><code>const digest = await sha256Hex(plain);
+
+const aes = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+const iv = crypto.getRandomValues(new Uint8Array(12));
+const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aes, plain);
+const rawAes = await crypto.subtle.exportKey('raw', aes);
+const publicKey = await crypto.subtle.importKey('spki', fromB64(target.publicKey), RSA, false, ['encrypt']);
+
+const wrappedKey = toB64(await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, publicKey, rawAes));
+// and, when the sender sets a password, the same key wrapped a second time:
+const passwordWrappedKey = (await KeyGuard.wrapWithPassword(aes, password)).wrappedKey;</code></pre>
+      </div>
+    </section>
+
+    <section class="auth__section" aria-labelledby="faq-heading">
+      <div class="auth__section-head">
+        <h2 id="faq-heading">Questions before you sign up</h2>
+      </div>
+      <div class="faq">
+        <details class="faq__item">
+          <summary class="faq__q">Does the server ever see my file?</summary>
+          <p class="faq__a">
+            No. Your browser hashes the plaintext with SHA-256, encrypts the bytes with a new
+            256-bit AES-GCM key, and wraps that key to the recipient’s RSA-OAEP public key before
+            uploading. The server stores only ciphertext and metadata.
           </p>
-        </div>
-        <p class="note">
-          <button id="recovery-toggle" class="linkish" type="button">Restore my key on a new device</button>
-        </p>
-        <button class="btn btn--primary" type="submit">Sign in</button>
-      </form>
-
-      <form id="register-form" class="hidden">
-        <div class="field">
-          <label class="route__label" for="register-username">Username</label>
-          <input class="input" id="register-username" autocomplete="username" required>
-        </div>
-        <div class="field">
-          <label class="route__label" for="register-email">Email</label>
-          <input class="input" id="register-email" type="email" autocomplete="email" required>
-        </div>
-        <div class="field">
-          <label class="route__label" for="register-password">Password</label>
-          <input class="input" id="register-password" type="password" autocomplete="new-password" minlength="8" required>
-        </div>
-        <div class="field hidden" id="register-access">
-          <label class="route__label" for="register-access-code">Demo access code</label>
-          <input class="input" id="register-access-code" autocomplete="off">
-        </div>
-        <p class="note">
-          Your key pair is generated in this browser when you register. The private key is stored
-          on this device and never sent to the server. We email you a 6-digit code to verify the
-          account.
-        </p>
-        <button class="btn btn--primary" type="submit">Create account</button>
-      </form>
-
-      <form id="verify-form" class="hidden">
-        <div class="field">
-          <span class="route__label">Verify</span>
-          <p id="verify-email" class="note"></p>
-        </div>
-        <div class="field">
-          <label class="route__label" for="verify-code">6-digit code</label>
-          <input class="input" id="verify-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
-        </div>
-        <p id="verify-note" class="note"></p>
-        <button class="btn btn--primary" type="submit">Verify and sign in</button>
-      </form>
-
-      <div id="google-block" class="hidden">
-        <p class="or">or</p>
-        <div id="google-button"></div>
-        <p id="google-note" class="note"></p>
+        </details>
+        <details class="faq__item">
+          <summary class="faq__q">What happens if I lose my device?</summary>
+          <p class="faq__a">
+            During registration your browser generates a 12-word recovery phrase, encrypts your
+            private key with a key derived from that phrase via PBKDF2-SHA-256, and uploads the
+            encrypted backup. On a new device, click “Restore my key on a new device” when signing
+            in; the phrase itself never goes to the server and cannot be reset.
+          </p>
+        </details>
+        <details class="faq__item">
+          <summary class="faq__q">Can the sender read the file after sending it?</summary>
+          <p class="faq__a">
+            Not from the server. The file key is wrapped only to the recipient’s public key (and
+            optionally to a share password of at least 10 characters), so the sender’s private key
+            cannot decrypt the server copy. The sender can still revoke an unopened share or delete it.
+          </p>
+        </details>
+        <details class="faq__item">
+          <summary class="faq__q">What does it cost?</summary>
+          <p class="faq__a">
+            Nothing. SecureShare is free to use, with no card required, and runs encryption
+            directly in your browser using the Web Crypto API.
+          </p>
+        </details>
+        <details class="faq__item">
+          <summary class="faq__q">How does the recipient know the file was not altered?</summary>
+          <p class="faq__a">
+            After decrypting the ciphertext, the recipient’s browser recomputes the SHA-256 digest
+            and verifies the sender’s ECDSA P-256 signature over the parties, filename, size,
+            digest, IV, permission, and expiry.
+          </p>
+        </details>
       </div>
+    </section>
 
-      <p id="auth-error" class="status status--error"></p>
-    </div>
+    <section class="auth__close" aria-labelledby="close-heading">
+      <div class="auth__close-copy">
+        <h2 id="close-heading">Create your key pair and send a file</h2>
+        <p>Your browser generates your RSA-OAEP and signing keys as soon as you register.</p>
+      </div>
+      <button id="close-register" class="btn btn--primary" type="button">Create an account</button>
+    </section>
   </section>
 
   <!-- DASHBOARD -->
@@ -181,16 +312,19 @@
           </li>
         </ul>
 
-        <div class="rail__storage">
-          <span class="rail__label">Ciphertext on the server</span>
-          <span class="rail__figure" id="stat-stored">0 B</span>
-          <ul class="storage__breakdown" id="storage-breakdown" aria-label="Storage by file type"></ul>
-        </div>
+        <details class="rail__details">
+          <summary class="rail__details-toggle">Details</summary>
+          <div class="rail__storage">
+            <span class="rail__label">Ciphertext on the server</span>
+            <span class="rail__figure" id="stat-stored">0 B</span>
+            <ul class="storage__breakdown" id="storage-breakdown" aria-label="Storage by file type"></ul>
+          </div>
 
-        <div class="rail__people-wrap">
-          <span class="rail__label" id="people-label">Send directly (drop a file)</span>
-          <ul class="rail__people" id="rail-people" aria-labelledby="people-label"></ul>
-        </div>
+          <div class="rail__people-wrap">
+            <span class="rail__label" id="people-label">Send directly (drop a file)</span>
+            <ul class="rail__people" id="rail-people" aria-labelledby="people-label"></ul>
+          </div>
+        </details>
       </nav>
 
       <div class="main">
@@ -221,7 +355,7 @@
           </div>
         </div>
 
-        <p id="main-status" class="status main__status"></p>
+        <p id="main-status" class="status main__status" role="status"></p>
 
         <div class="bulk-bar hidden" id="bulk-bar" role="region" aria-label="Bulk actions">
           <div class="bulk-bar__left">
@@ -291,7 +425,7 @@
                   The file key is wrapped to the public key of the recipient.
                 </p>
                 <div class="field hidden" id="password-field">
-                  <label class="route__label" for="share-password">Password for this file</label>
+                  <label class="route__label" for="share-password">Password for this file (at least 10 characters)</label>
                   <input class="input" id="share-password" type="password" autocomplete="new-password">
                   <p class="note">Give it to the recipient yourself. The server never sees it.</p>
                 </div>
@@ -300,7 +434,7 @@
 
             <div class="route__step">
               <button id="share" class="btn btn--primary" type="button">Encrypt and send</button>
-              <p id="share-status" class="status"></p>
+              <p id="share-status" class="status" role="status"></p>
             </div>
           </div>
         </div>
@@ -401,7 +535,26 @@
         <dt>Encrypted to public key</dt>
         <dd><code id="preview-key" class="preview-panel__key"></code></dd>
       </div>
+      <div class="preview-panel__row">
+        <dt>Fingerprint</dt>
+        <dd><code id="preview-digest" class="preview-panel__key"></code></dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt>Signature</dt>
+        <dd id="preview-signature"></dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt>Stored on the server</dt>
+        <dd id="preview-stored"></dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt>Protection</dt>
+        <dd id="preview-protection"></dd>
+      </div>
     </dl>
+    <div class="preview-panel__foot">
+      <button id="preview-receipt" class="btn btn--small" type="button">Copy the security receipt</button>
+    </div>
   </div>
 </div>
 
@@ -455,5 +608,6 @@
 
 <div id="toasts" class="toasts" aria-live="polite" aria-atomic="false"></div>
 
+<script src="anatomy.js"></script>
 </body>
 </html>

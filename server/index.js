@@ -164,6 +164,7 @@ function shareView(share, username) {
     to: share.to,
     filename: share.filename,
     size: share.size,
+    storedSize: share.storedSize || share.size,
     permission: share.permission || 'view',
     createdAt: share.createdAt,
     expiresAt: share.expiresAt || null,
@@ -175,6 +176,7 @@ function shareView(share, username) {
     signature: share.signature || null,
     protected: share.protected || 'key',
     passwordSalt: share.passwordSalt || null,
+    passwordWrappedKey: share.passwordWrappedKey || null,
     starred: Boolean(username && (share.starredBy || []).includes(username)),
     state: shareState(share),
   };
@@ -460,10 +462,30 @@ async function handleApi(req, res, url) {
     if (body.signature != null && typeof body.signature !== 'string') {
       return json(res, 400, { error: 'signature must be a base64 string' });
     }
-    if (body.protected === 'password' && typeof body.passwordSalt !== 'string') {
-      return json(res, 400, { error: 'a password protected share needs its salt' });
+    if (body.protected === 'password') {
+      if (typeof body.passwordSalt !== 'string') {
+        return json(res, 400, { error: 'a password protected share needs its salt' });
+      }
+      if (typeof body.passwordWrappedKey !== 'string') {
+        return json(res, 400, { error: 'a password protected share needs its second wrap' });
+      }
     }
-    const lifetime = Math.max(0, Math.min(Number(body.expiresIn) || 0, 30 * 24 * 3600));
+    // The sender sets the moment the file dies, because the signature covers
+    // it and the recipient has to rebuild the same value to check that
+    // signature. The server refuses anything outside the range it would have
+    // allowed itself, so the stored value is always the signed one.
+    let expiresAt = null;
+    if (body.expiresAt != null) {
+      const asked = Number(body.expiresAt);
+      const ceiling = Date.now() + 30 * 24 * 3600 * 1000;
+      if (!Number.isFinite(asked) || asked <= Date.now() || asked > ceiling) {
+        return json(res, 400, { error: 'the expiry must be in the future and at most 30 days away' });
+      }
+      expiresAt = asked;
+    } else {
+      const lifetime = Math.max(0, Math.min(Number(body.expiresIn) || 0, 30 * 24 * 3600));
+      expiresAt = lifetime ? Date.now() + lifetime * 1000 : null;
+    }
     const blob = Buffer.from(ciphertext, 'base64');
     const id = crypto.randomUUID();
     writeBlob(id, blob);
@@ -473,16 +495,18 @@ async function handleApi(req, res, url) {
       to: recipient,
       filename,
       size: Number(size) || blob.length,
+      storedSize: blob.length,
       permission,
       iv,
       wrappedKey,
+      passwordWrappedKey: body.passwordWrappedKey || null,
       digest: body.digest || null,
       signature: body.signature || null,
       protected: body.protected === 'password' ? 'password' : 'key',
       passwordSalt: body.passwordSalt || null,
       blob: `${id}.bin`,
       createdAt: Date.now(),
-      expiresAt: lifetime ? Date.now() + lifetime * 1000 : null,
+      expiresAt,
       revokedAt: null,
       openedAt: null,
     };

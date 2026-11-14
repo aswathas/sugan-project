@@ -587,17 +587,28 @@ async function signUp(cdp, sessionId, username) {
     console.log('PASS  a password protected share refuses the wrong password and opens with the right one');
 
     // The polish pass: toasts, the file type chip, the filters, the bulk bar,
-    // the context menu, the explainer and the shortcut list.
+    // the context menu, the sign-in anatomy and the shortcut list.
     const explainer = await evaluate(
       alice,
       alicePage,
       `(() => {
-        const panel = document.getElementById('explainer');
-        return panel ? panel.textContent.replace(/\\s+/g, ' ').trim() : '';
+        const page = document.getElementById('auth');
+        return page ? page.textContent.replace(/\\s+/g, ' ').trim() : '';
       })()`
     );
-    assert.ok(explainer.length > 40, 'the sign in screen must explain how the encryption works');
-    assert.ok(explainer.toLowerCase().includes('ciphertext'), 'the explainer must say what the server holds');
+    assert.ok(explainer.length > 400, 'the sign in screen must explain how the encryption works');
+    assert.ok(explainer.toLowerCase().includes('ciphertext'), 'the sign in screen must say what the server holds');
+    for (const moment of ['Encrypted in your browser', 'The server holds only ciphertext', 'Proved afterwards']) {
+      assert.ok(explainer.includes(moment), `the sign in screen must name the moment: ${moment}`);
+    }
+    assert.ok(
+      await evaluate(alice, alicePage, "!!document.querySelector('.code-sample__pre code')"),
+      'the sign in screen must show the real encryption code'
+    );
+    assert.ok(
+      await evaluate(alice, alicePage, "document.querySelectorAll('.faq__item').length >= 4"),
+      'the sign in screen must answer the questions a visitor asks'
+    );
     console.log('PASS  the sign in screen explains how the encryption works');
 
     const chip = await evaluate(
@@ -688,6 +699,86 @@ async function signUp(cdp, sessionId, username) {
     const shortcuts = await evaluate(bob, bobPage, "document.getElementById('shortcuts-panel').textContent");
     assert.ok(shortcuts.includes('/') && shortcuts.includes('j'), 'the shortcut list must name the keys');
     console.log('PASS  the shortcut list opens and names the keys');
+
+    // The details panel must show the whole chain for one file, not just its
+    // name: the fingerprint, the signature, what the server really stored and
+    // how the file was protected.
+    await evaluate(
+      bob,
+      bobPage,
+      `(() => {
+        const card = [...document.querySelectorAll('#cards .card-file')].find((c) => c.textContent.includes('syllabus.pdf'));
+        const name = card ? card.querySelector('.card-file__name') : null;
+        if (name) name.click();
+        return true;
+      })()`
+    );
+    await waitFor(
+      bob,
+      bobPage,
+      "!document.getElementById('preview-dialog').classList.contains('hidden')",
+      'the details panel opens'
+    );
+    const chain = await evaluate(
+      bob,
+      bobPage,
+      `(() => {
+        const read = (id) => (document.getElementById(id) || {}).textContent || '';
+        return {
+          digest: read('preview-digest').trim(),
+          signature: read('preview-signature').trim(),
+          stored: read('preview-stored').trim(),
+          protection: read('preview-protection').trim(),
+        };
+      })()`
+    );
+    assert.ok(/^[0-9a-f]{64}$/.test(chain.digest), 'the details panel must show the sha-256 fingerprint');
+    assert.ok(chain.signature.includes('ECDSA'), 'the details panel must name the signature');
+    assert.ok(/of ciphertext \(\d+ bytes\)/.test(chain.stored), 'the details panel must say how many bytes the server holds');
+    assert.ok(chain.protection.length > 5, 'the details panel must say how the file was protected');
+    console.log('PASS  the details panel shows the whole chain for a file');
+
+    // The receipt is the artefact a reviewer reads, so it must be copyable.
+    await evaluate(bob, bobPage, "document.getElementById('preview-receipt').click()");
+    await waitFor(
+      bob,
+      bobPage,
+      "[...document.querySelectorAll('#toasts .toast')].some((t) => t.textContent.includes('receipt'))",
+      'the receipt toast appears'
+    );
+    await evaluate(bob, bobPage, "document.getElementById('preview-close').click()");
+    console.log('PASS  the security receipt can be copied');
+
+    // A file that arrives while the page is open must be announced.
+    await evaluate(
+      alice,
+      alicePage,
+      `(async () => {
+        const response = await fetch('/api/shares', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipient: 'bob',
+            filename: 'arrived.pdf',
+            size: 12,
+            permission: 'view',
+            digest: 'a'.repeat(64),
+            iv: 'AAAAAAAAAAAAAAAA',
+            wrappedKey: 'AAAA',
+            ciphertext: 'AAAA',
+          }),
+        });
+        return response.status;
+      })()`
+    );
+    await evaluate(bob, bobPage, "window.__watch()");
+    await waitFor(
+      bob,
+      bobPage,
+      "[...document.querySelectorAll('#toasts .toast')].some((t) => t.textContent.includes('arrived.pdf'))",
+      'the arrival is announced'
+    );
+    console.log('PASS  a file that arrives is announced');
 
     console.log('\nALL BROWSER CHECKS PASSED');
   } finally {
