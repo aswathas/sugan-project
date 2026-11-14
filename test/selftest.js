@@ -359,6 +359,25 @@ async function verify(username, code) {
   assert.strictEqual(rightCode.status, 201, 'registration with the right access code must work');
   delete process.env.ACCESS_CODE;
 
+  // The Google sign-in button only works if the page's own headers allow it.
+  // Google answers a request that carries no referrer with 400, and the
+  // content security policy has to let the button's stylesheet through.
+  const pageRes = await fetch(`http://127.0.0.1:${server.address().port}/`);
+  const pageText = await pageRes.text();
+  assert.strictEqual(
+    pageRes.headers.get('referrer-policy'),
+    'strict-origin-when-cross-origin',
+    'the referrer policy must let Google see the origin, or the sign-in button answers 400'
+  );
+  const csp = pageRes.headers.get('content-security-policy') || '';
+  assert.ok(
+    /style-src[^;]*https:\/\/accounts\.google\.com/.test(csp),
+    "the content security policy must allow Google's stylesheet for the sign-in button"
+  );
+  const iconRes = await fetch(`http://127.0.0.1:${server.address().port}/favicon.svg`);
+  assert.strictEqual(iconRes.status, 200, 'the favicon must be served');
+  assert.ok(pageText.includes('favicon.svg'), 'the page must link the favicon');
+
   console.log('PASS  register + email one-time code verification');
   console.log('PASS  unverified account cannot sign in, wrong code rejected');
   console.log('PASS  register + login + keypair publish');
@@ -374,6 +393,7 @@ async function verify(username, code) {
   console.log('PASS  repeated failed sign-ins and wrong codes are locked out');
   console.log('PASS  signing out everywhere ends every session of the account');
   console.log('PASS  starring is per user, and delete, restore and purge behave');
+  console.log("PASS  the headers and the favicon leave the Google button working");
 
   server.close();
   fs.rmSync(DATA_DIR, { recursive: true, force: true });
