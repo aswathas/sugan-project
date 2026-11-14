@@ -227,9 +227,21 @@ function parseMarkdown(markdown) {
       continue;
     }
 
-    if (trimmed.startsWith('|')) {
+    if (trimmed.startsWith('```')) {
+      const codeLines = [];
+      i += 1;
+      while (i < lines.length && !lines[i].trim().startsWith('```')) {
+        codeLines.push(lines[i]);
+        i += 1;
+      }
+      if (i < lines.length) i += 1;
+      blocks.push({ type: 'code', lines: codeLines });
+      continue;
+    }
+
+    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
       const rows = [];
-      while (i < lines.length && lines[i].trim().startsWith('|')) {
+      while (i < lines.length && lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|')) {
         rows.push(lines[i].trim());
         i += 1;
       }
@@ -283,7 +295,7 @@ function parseMarkdown(markdown) {
     }
 
     const paragraph = [];
-    while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|\||-\s|\d+\.\s|\[FIGURE:)/.test(lines[i].trim())) {
+    while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|-\s|\d+\.\s|\[FIGURE:|```)/.test(lines[i].trim()) && !(lines[i].trim().startsWith('|') && lines[i].trim().endsWith('|'))) {
       paragraph.push(lines[i].trim());
       i += 1;
     }
@@ -361,6 +373,7 @@ function figureBlock(block, tracker) {
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { before: 160, after: 60 },
+      keepNext: Boolean(block.caption),
       children: [new ImageRun({ type: 'png', data, transformation: size })],
     }),
   ];
@@ -381,7 +394,7 @@ function tableBlock(block, tracker) {
   for (let c = 0; c < columns; c += 1) {
     let longest = 0;
     for (const row of block.rows) longest = Math.max(longest, (row[c] || '').length);
-    weights[c] = Math.min(Math.max(longest, 6), 60);
+    weights[c] = Math.min(Math.max(longest, 12), 55);
   }
   const total = weights.reduce((a, b) => a + b, 0);
   const widths = weights.map((w) => Math.floor((w / total) * CONTENT_WIDTH));
@@ -425,6 +438,7 @@ function tableBlock(block, tracker) {
     out.push(
       new Paragraph({
         spacing: { before: 200, after: 80 },
+        keepNext: true,
         children: bookmarkId ? [new Bookmark({ id: bookmarkId, children: [run] })] : [run],
       })
     );
@@ -454,6 +468,18 @@ function renderBlocks(blocks, tracker) {
       for (const item of block.items) {
         children.push(new Paragraph({ numbering: { reference: 'numbers', level: 0 }, children: inlineRuns(item) }));
       }
+    } else if (block.type === 'code') {
+      block.lines.forEach((line, idx) => {
+        const isLast = idx === block.lines.length - 1;
+        children.push(
+          new Paragraph({
+            alignment: AlignmentType.LEFT,
+            indent: { left: 360 },
+            spacing: { before: idx === 0 ? 80 : 0, after: isLast ? 120 : 20, line: 240 },
+            children: [new TextRun({ text: line || ' ', font: 'Consolas', size: 19 })],
+          })
+        );
+      });
     } else if (block.type === 'figure') children.push(...figureBlock(block, tracker));
     else if (block.type === 'table') children.push(...tableBlock(block, tracker));
   }
@@ -737,13 +763,13 @@ function main() {
   const referencesChildren = [];
   referencesChildren.push(heading1Paragraph('REFERENCES'));
   const referencesBlocks = parseMarkdown(fs.readFileSync(path.join(DRAFT, 'references.md'), 'utf8')).filter((b) => b.type !== 'heading');
-  for (const block of renderBlocks(referencesBlocks)) {
-    if (block instanceof Paragraph) {
+  for (const block of referencesBlocks) {
+    if (block.type === 'paragraph') {
       referencesChildren.push(
         new Paragraph({
           spacing: { after: 120, line: 280 },
           indent: { left: 480, hanging: 480 },
-          children: block.children,
+          children: inlineRuns(block.text),
         })
       );
     }

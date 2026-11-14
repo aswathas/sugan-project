@@ -185,6 +185,25 @@ async function signUp(cdp, sessionId, username) {
       "'",
     `${username} signed in`
   );
+  // The recovery phrase is shown once, and the wrapped private key is on file.
+  const phrase = await waitFor(
+    cdp,
+    sessionId,
+    `(() => {
+      const panel = document.getElementById('phrase-panel');
+      const words = document.getElementById('phrase-words').textContent.trim();
+      return !panel.classList.contains('hidden') && words.split(' ').length === 12 ? words : false;
+    })()`,
+    'the recovery phrase is shown'
+  );
+  const backedUp = await evaluate(
+    cdp,
+    sessionId,
+    "fetch('/api/keys/backup').then((r) => r.json()).then((d) => !!d.ciphertext && !!d.salt && !!d.iv)"
+  );
+  assert.ok(backedUp, 'the wrapped private key must be on the server');
+  assert.ok(phrase.split(' ').length === 12, 'the recovery phrase must be twelve words');
+  console.log(`PASS  ${username} has a twelve word recovery phrase and a wrapped key on the server`);
 }
 
 (async () => {
@@ -445,9 +464,117 @@ async function signUp(cdp, sessionId, username) {
     assert.ok(afterOpen.verified, 'the card shows that the file was verified against the sender fingerprint');
     assert.strictEqual(afterOpen.badge, 'verified');
     assert.ok(afterOpen.status.includes('Verified'), 'the interface says the file was verified');
+    assert.ok(afterOpen.status.includes('signature checks out'), 'the sender signature must be checked');
     assert.ok(afterOpen.activity.includes('opened'), 'the activity panel records the open');
-    console.log('PASS  recipient decrypted in the browser, verified against the sender fingerprint');
+    console.log('PASS  recipient decrypted in the browser, verified and signed');
     await shoot(bob, bobPage, '05-decrypted.png');
+
+    // A share protected with a password: the recipient cannot open it without it.
+    await evaluate(alice, alicePage, "document.getElementById('new-share').click()");
+    await evaluate(alice, alicePage, "document.querySelector('[data-protection=\"password\"]').click()");
+    const secretPath = path.join(DATA_DIR, 'locked.txt');
+    fs.writeFileSync(secretPath, 'LOCKED-MARKER-99');
+    const { root: lockRoot } = await alice.send('DOM.getDocument', {}, alicePage);
+    const { nodeId: lockNode } = await alice.send(
+      'DOM.querySelector',
+      { nodeId: lockRoot.nodeId, selector: '#file' },
+      alicePage
+    );
+    await alice.send('DOM.setFileInputFiles', { files: [secretPath], nodeId: lockNode }, alicePage);
+    await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        document.getElementById('share-password').value = 'open-sesame';
+        const select = document.getElementById('recipient');
+        select.value = 'bob';
+        select.dispatchEvent(new Event('change'));
+        document.getElementById('share').click();
+        return true;
+      })()`
+    );
+    await waitFor(
+      alice,
+      alicePage,
+      "document.getElementById('count-sent').textContent === '3'",
+      'the protected file was sent: ' +
+        (await evaluate(alice, alicePage, "document.getElementById('share-status').textContent"))
+    );
+    await evaluate(bob, bobPage, 'refresh()');
+    await waitFor(bob, bobPage, "document.querySelectorAll('#cards .card-file').length === 3", 'bob sees the protected file');
+    await evaluate(
+      bob,
+      bobPage,
+      `(() => {
+        const card = [...document.querySelectorAll('#cards .card-file')].find((c) => c.textContent.includes('locked.txt'));
+        [...card.querySelectorAll('button')].find((b) => b.textContent === 'Decrypt').click();
+        return true;
+      })()`
+    );
+    await waitFor(
+      bob,
+      bobPage,
+      "!document.getElementById('password-dialog').classList.contains('hidden')",
+      'the password gate opens'
+    );
+    await evaluate(
+      bob,
+      bobPage,
+      `(() => {
+        document.getElementById('password-input').value = 'wrong-password';
+        document.getElementById('password-ok').click();
+        return true;
+      })()`
+    );
+    await waitFor(
+      bob,
+      bobPage,
+      "document.getElementById('main-status').textContent.includes('Decrypt failed')",
+      'the wrong password is refused'
+    );
+    await evaluate(
+      bob,
+      bobPage,
+      `(() => {
+        const card = [...document.querySelectorAll('#cards .card-file')].find((c) => c.textContent.includes('locked.txt'));
+        [...card.querySelectorAll('button')].find((b) => b.textContent === 'Decrypt').click();
+        return true;
+      })()`
+    );
+    await waitFor(
+      bob,
+      bobPage,
+      "!document.getElementById('password-dialog').classList.contains('hidden')",
+      'the password gate opens again'
+    );
+    await evaluate(
+      bob,
+      bobPage,
+      `(() => {
+        window.__captured = null;
+        const original = URL.createObjectURL.bind(URL);
+        URL.createObjectURL = (blob) => { window.__captured = blob; return original(blob); };
+        document.getElementById('password-input').value = 'open-sesame';
+        document.getElementById('password-ok').click();
+        return true;
+      })()`
+    );
+    await waitFor(bob, bobPage, 'window.__captured !== null', 'the right password opens the file');
+    const unlocked = await evaluate(
+      bob,
+      bobPage,
+      `window.__captured.arrayBuffer().then((buf) => {
+        let out = '';
+        const bytes = new Uint8Array(buf);
+        for (let i = 0; i < bytes.length; i++) out += String.fromCharCode(bytes[i]);
+        return btoa(out);
+      })`
+    );
+    assert.ok(
+      Buffer.from(unlocked, 'base64').toString('utf8').includes('LOCKED-MARKER-99'),
+      'the right password must open the protected file'
+    );
+    console.log('PASS  a password protected share refuses the wrong password and opens with the right one');
 
     console.log('\nALL BROWSER CHECKS PASSED');
   } finally {

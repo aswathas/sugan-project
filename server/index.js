@@ -95,6 +95,15 @@ function requireUser(req, res) {
     json(res, 401, { error: 'not signed in' });
     return null;
   }
+  // Presence without websockets: the server notes that this account is active.
+  const user = db.users[username];
+  if (user) {
+    user.lastSeen = Date.now();
+    if (Date.now() - (db.lastSeenSave || 0) > 30000) {
+      db.lastSeenSave = Date.now();
+      save(db);
+    }
+  }
   return username;
 }
 
@@ -161,6 +170,9 @@ function shareView(share, username) {
     deletedAt: share.deletedAt || null,
     deletedBy: share.deletedBy || null,
     digest: share.digest || null,
+    signature: share.signature || null,
+    protected: share.protected || 'key',
+    passwordSalt: share.passwordSalt || null,
     starred: Boolean(username && (share.starredBy || []).includes(username)),
     state: shareState(share),
   };
@@ -202,6 +214,7 @@ async function handleApi(req, res, url) {
         email: payload.email || `${payload.sub}@google`,
         googleSub: payload.sub,
         publicKey: body.publicKey,
+        signingKey: typeof body.signingKey === 'string' ? body.signingKey : null,
         verified: true,
         createdAt: Date.now(),
       };
@@ -220,6 +233,7 @@ async function handleApi(req, res, url) {
   if (route === 'POST /api/register') {
     const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
     const { username, email, password, publicKey } = body;
+    const signingKey = typeof body.signingKey === 'string' ? body.signingKey : null;
     // A public deployment should not accept registrations from strangers. The
     // check comes first so a stranger cannot even learn which usernames exist.
     if (process.env.ACCESS_CODE) {
@@ -257,6 +271,7 @@ async function handleApi(req, res, url) {
       salt,
       hash,
       publicKey,
+      signingKey,
       verified: false,
       otp: { salt: otp.salt, hash: otp.hash, expires: Date.now() + OTP_TTL_MS },
       createdAt: Date.now(),
@@ -367,9 +382,49 @@ async function handleApi(req, res, url) {
   if (route === 'GET /api/users') {
     if (!requireUser(req, res)) return;
     const users = Object.values(db.users)
-      .map((u) => ({ username: u.username, publicKey: u.publicKey }))
+      .map((u) => ({
+        username: u.username,
+        publicKey: u.publicKey,
+        signingKey: u.signingKey || null,
+        lastSeen: u.lastSeen || null,
+      }))
       .sort((a, b) => a.username.localeCompare(b.username));
     return json(res, 200, { users });
+  }
+
+  if (route === 'POST /api/keys/backup') {
+    const username = requireUser(req, res);
+    if (!username) return;
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const b64 = /^[A-Za-z0-9+/=]+$/;
+    if (
+      typeof body.salt !== 'string' || !b64.test(body.salt) ||
+      typeof body.iv !== 'string' || !b64.test(body.iv) ||
+      typeof body.ciphertext !== 'string' || !b64.test(body.ciphertext)
+    ) {
+      return json(res, 400, { error: 'the wrapped key must be salt, iv and ciphertext' });
+    }
+    db.users[username].keyBackup = { salt: body.salt, iv: body.iv, ciphertext: body.ciphertext };
+    save(db);
+    return json(res, 200, { ok: true });
+  }
+
+  if (route === 'GET /api/keys/backup') {
+    const username = requireUser(req, res);
+    if (!username) return;
+    const backup = db.users[username].keyBackup;
+    if (!backup) return json(res, 404, { error: 'no key backup on file' });
+    return json(res, 200, backup);
+  }
+
+  // Recovery, before there is a session: the blob is the private key encrypted
+  // under the recovery phrase, so the server hands it over without being able to
+  // read it. The phrase never reaches the server.
+  if (route === 'POST /api/keys/recover') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const user = db.users[String(body.username || '')];
+    if (!user || !user.keyBackup) return json(res, 404, { error: 'no key backup for that account' });
+    return json(res, 200, user.keyBackup);
   }
 
   if (route === 'POST /api/shares') {
@@ -393,6 +448,12 @@ async function handleApi(req, res, url) {
     if (body.digest != null && !/^[0-9a-f]{64}$/.test(String(body.digest))) {
       return json(res, 400, { error: 'digest must be a sha-256 hex string' });
     }
+    if (body.signature != null && typeof body.signature !== 'string') {
+      return json(res, 400, { error: 'signature must be a base64 string' });
+    }
+    if (body.protected === 'password' && typeof body.passwordSalt !== 'string') {
+      return json(res, 400, { error: 'a password protected share needs its salt' });
+    }
     const lifetime = Math.max(0, Math.min(Number(body.expiresIn) || 0, 30 * 24 * 3600));
     const blob = Buffer.from(ciphertext, 'base64');
     const id = crypto.randomUUID();
@@ -407,6 +468,9 @@ async function handleApi(req, res, url) {
       iv,
       wrappedKey,
       digest: body.digest || null,
+      signature: body.signature || null,
+      protected: body.protected === 'password' ? 'password' : 'key',
+      passwordSalt: body.passwordSalt || null,
       blob: `${id}.bin`,
       createdAt: Date.now(),
       expiresAt: lifetime ? Date.now() + lifetime * 1000 : null,

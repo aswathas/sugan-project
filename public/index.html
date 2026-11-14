@@ -6,6 +6,8 @@
 <meta name="description" content="SecureShare shares a file with one person, encrypted in your own browser, so the server never sees it.">
 <title>SecureShare</title>
 <link rel="stylesheet" href="style.css">
+<script src="keyguard.js"></script>
+<script src="app.js"></script>
 </head>
 <body>
 <header class="band">
@@ -15,8 +17,11 @@
       <span class="wordmark__name">SecureShare</span>
     </div>
 
-    <div class="search hidden" id="search-wrap">
-      <input class="search__input" id="search" type="search" placeholder="Search files" aria-label="Search files" autocomplete="off">
+    <div class="band__tools">
+      <div class="search hidden" id="search-wrap">
+        <input class="search__input" id="search" type="search" placeholder="Search files (/)" aria-label="Search files" autocomplete="off">
+      </div>
+      <button id="theme-toggle" class="btn btn--on-ink btn--small" type="button" aria-pressed="false" aria-label="Switch to dark theme">Dark theme</button>
     </div>
 
     <div id="session" class="session hidden">
@@ -55,6 +60,17 @@
           <label class="route__label" for="login-password">Password</label>
           <input class="input" id="login-password" type="password" autocomplete="current-password" required>
         </div>
+        <div class="field hidden" id="recovery-field">
+          <label class="route__label" for="recovery-phrase">Recovery phrase</label>
+          <input class="input" id="recovery-phrase" type="password" autocomplete="off">
+          <p class="note">
+            Only if this is a new device: your twelve word phrase restores the private key, so the
+            files sent to you can be opened again.
+          </p>
+        </div>
+        <p class="note">
+          <button id="recovery-toggle" class="linkish" type="button">Restore my key on a new device</button>
+        </p>
         <button class="btn btn--primary" type="submit">Sign in</button>
       </form>
 
@@ -126,9 +142,21 @@
             </button>
           </li>
           <li>
+            <button class="rail__item" type="button" data-view="starred">
+              <span>Starred</span>
+              <span class="rail__count" id="count-starred">0</span>
+            </button>
+          </li>
+          <li>
             <button class="rail__item" type="button" data-view="recent">
               <span>Recent</span>
               <span class="rail__count" id="count-recent">0</span>
+            </button>
+          </li>
+          <li>
+            <button class="rail__item" type="button" data-view="trashed">
+              <span>Trashed</span>
+              <span class="rail__count" id="count-trashed">0</span>
             </button>
           </li>
         </ul>
@@ -136,16 +164,47 @@
         <div class="rail__storage">
           <span class="rail__label">Ciphertext on the server</span>
           <span class="rail__figure" id="stat-stored">0 B</span>
+          <ul class="storage__breakdown" id="storage-breakdown" aria-label="Storage by file type"></ul>
+        </div>
+
+        <div class="rail__people-wrap">
+          <span class="rail__label" id="people-label">Send directly (drop a file)</span>
+          <ul class="rail__people" id="rail-people" aria-labelledby="people-label"></ul>
         </div>
       </nav>
 
       <div class="main">
         <div class="main__head">
-          <h2 id="view-title">Shared with me</h2>
-          <span class="main__meta" id="view-meta"></span>
+          <div class="main__title-group">
+            <h2 id="view-title">Shared with me</h2>
+            <span class="main__meta" id="view-meta"></span>
+          </div>
+          <div class="main__tools" id="view-tools">
+            <label class="visually-hidden" for="sort-select">Sort files</label>
+            <select class="toolbar-select" id="sort-select" aria-label="Sort files">
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="name">Name</option>
+              <option value="size">Size</option>
+            </select>
+            <div class="layout-toggle" role="group" aria-label="Card layout">
+              <button class="btn btn--small layout-btn" id="layout-grid" type="button" aria-pressed="true" aria-label="Grid view">Grid</button>
+              <button class="btn btn--small layout-btn" id="layout-list" type="button" aria-pressed="false" aria-label="List view">List</button>
+            </div>
+          </div>
         </div>
 
         <p id="main-status" class="status main__status"></p>
+
+        <div class="bulk-bar hidden" id="bulk-bar" role="region" aria-label="Bulk actions">
+          <span class="bulk-bar__count" id="bulk-count">0 selected</span>
+          <div class="bulk-bar__actions">
+            <button class="btn btn--small" id="bulk-star" type="button">Star</button>
+            <button class="btn btn--small" id="bulk-revoke" type="button">Revoke</button>
+            <button class="btn btn--small" id="bulk-delete" type="button">Delete</button>
+            <button class="btn btn--small" id="bulk-clear" type="button">Clear</button>
+          </div>
+        </div>
 
         <div class="cards" id="cards"></div>
 
@@ -192,6 +251,24 @@
             </div>
 
             <div class="route__step">
+              <fieldset class="choice">
+                <legend class="choice__legend">Extra protection</legend>
+                <div class="choice__cells">
+                  <button type="button" class="cell" data-protection="key" aria-pressed="true">Key only</button>
+                  <button type="button" class="cell" data-protection="password" aria-pressed="false">Password too</button>
+                </div>
+                <p class="note" id="protection-note">
+                  The file key is wrapped to the public key of the recipient.
+                </p>
+                <div class="field hidden" id="password-field">
+                  <label class="route__label" for="share-password">Password for this file</label>
+                  <input class="input" id="share-password" type="password" autocomplete="new-password">
+                  <p class="note">Give it to the recipient yourself. The server never sees it.</p>
+                </div>
+              </fieldset>
+            </div>
+
+            <div class="route__step">
               <button id="share" class="btn btn--primary" type="button">Encrypt and send</button>
               <p id="share-status" class="status"></p>
             </div>
@@ -223,11 +300,80 @@
           <p class="note" id="trail-state">checking the trail</p>
           <ul class="activity__list" id="activity"></ul>
         </div>
+
+        <div class="phrase hidden" id="phrase-panel">
+          <span class="tab">Your recovery phrase</span>
+          <p class="note">
+            Write these twelve words down and keep them somewhere safe. They are the only way to get
+            your private key back on another device, and they cannot be reset by anybody, including
+            the server.
+          </p>
+          <p class="phrase__words" id="phrase-words"></p>
+          <button id="phrase-copy" class="btn btn--small" type="button">Copy the phrase</button>
+        </div>
       </div>
     </div>
   </section>
 </main>
 
-<script src="app.js"></script>
+<div id="password-dialog" class="preview-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="password-note">
+  <div class="preview-panel preview-panel--small">
+    <div class="preview-panel__head">
+      <div>
+        <span class="tab">Password needed</span>
+        <h3 class="preview-panel__title">This file is protected</h3>
+      </div>
+      <button id="password-close" class="btn btn--small" type="button" aria-label="Close">Close</button>
+    </div>
+    <p class="note" id="password-note">The sender protected this file with a password. Ask them for it.</p>
+    <div class="field">
+      <label class="route__label" for="password-input">Password</label>
+      <input class="input" id="password-input" type="password" autocomplete="off">
+    </div>
+    <button id="password-ok" class="btn btn--primary" type="button">Decrypt it</button>
+  </div>
+</div>
+
+<div id="preview-dialog" class="preview-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="preview-title">  <div class="preview-panel">
+    <div class="preview-panel__head">
+      <div>
+        <span class="tab">File details</span>
+        <h3 id="preview-title" class="preview-panel__title"></h3>
+      </div>
+      <button id="preview-close" class="btn btn--small" type="button" aria-label="Close preview">Close</button>
+    </div>
+    <dl class="preview-panel__list">
+      <div class="preview-panel__row">
+        <dt>Size</dt>
+        <dd id="preview-size"></dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt>With</dt>
+        <dd id="preview-who"></dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt>Sent</dt>
+        <dd id="preview-when"></dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt>Permission</dt>
+        <dd id="preview-permission"></dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt>Self-destruct</dt>
+        <dd id="preview-expiry"></dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt>State</dt>
+        <dd id="preview-state"></dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt>Encrypted to public key</dt>
+        <dd><code id="preview-key" class="preview-panel__key"></code></dd>
+      </div>
+    </dl>
+  </div>
+</div>
+
 </body>
 </html>
