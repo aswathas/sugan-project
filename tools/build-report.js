@@ -50,6 +50,10 @@ const {
   Table,
   TableCell,
   TableLayoutType,
+  LeaderType,
+  Tab,
+  TabStopPosition,
+  TabStopType,
   TableOfContents,
   TableRow,
   TextRun,
@@ -145,24 +149,27 @@ const styles = {
       name: 'toc 1',
       basedOn: 'Normal',
       next: 'Normal',
-      run: { font: BODY_FONT, size: 22, bold: true, color: '000000' },
-      paragraph: { alignment: AlignmentType.LEFT, spacing: { before: 80, after: 60, line: 260 } },
+      run: { font: BODY_FONT, size: 20, bold: true, color: '000000' },
+      // Tight on purpose: the contents must fit on one page, or the page
+      // numbers in it are computed against a shorter contents than the one
+      // that is printed, and every entry is then out by one.
+      paragraph: { alignment: AlignmentType.LEFT, spacing: { before: 40, after: 20, line: 240 } },
     },
     {
       id: 'TOC2',
       name: 'toc 2',
       basedOn: 'Normal',
       next: 'Normal',
-      run: { font: BODY_FONT, size: 22, color: '000000' },
-      paragraph: { alignment: AlignmentType.LEFT, indent: { left: 360 }, spacing: { after: 40, line: 260 } },
+      run: { font: BODY_FONT, size: 20, color: '000000' },
+      paragraph: { alignment: AlignmentType.LEFT, indent: { left: 360 }, spacing: { after: 20, line: 240 } },
     },
     {
       id: 'TOC3',
       name: 'toc 3',
       basedOn: 'Normal',
       next: 'Normal',
-      run: { font: BODY_FONT, size: 22, color: '000000' },
-      paragraph: { alignment: AlignmentType.LEFT, indent: { left: 720 }, spacing: { after: 40, line: 260 } },
+      run: { font: BODY_FONT, size: 20, color: '000000' },
+      paragraph: { alignment: AlignmentType.LEFT, indent: { left: 720 }, spacing: { after: 20, line: 240 } },
     },
   ],
 };
@@ -332,6 +339,45 @@ function jpegDimensions(buffer) {
     offset += 2 + segLen;
   }
   return { width: 234, height: 106 };
+}
+
+
+/* ---------------- contents ---------------- */
+
+// The page numbers in the contents are measured from a first rendering and
+// written back in, because a field's page numbers are computed against a
+// pagination that is not quite the one the document ends up with.
+const TOC_FILE = path.join(ROOT, 'report', '.toc.json');
+
+function measuredPages() {
+  try {
+    return JSON.parse(fs.readFileSync(TOC_FILE, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function contentsEntry(text, level, page) {
+  const indent = level === 1 ? 0 : level === 2 ? 360 : 720;
+  return new Paragraph({
+    spacing: { before: level === 1 ? 40 : 0, after: 20, line: 240 },
+    indent: { left: indent },
+    tabStops: [
+      {
+        type: TabStopType.RIGHT,
+        position: TabStopPosition.MAX,
+        leader: LeaderType.DOT,
+      },
+    ],
+    children: [
+      new TextRun({
+        font: BODY_FONT,
+        size: 20,
+        bold: level === 1,
+        children: [text, new Tab(), page ? String(page) : ''],
+      }),
+    ],
+  });
 }
 
 /* ---------------- rendering ---------------- */
@@ -756,12 +802,20 @@ function main() {
 
   const tracker = { tables: [], figures: [] };
   const chapterChildren = [];
+  // The contents list, in the order the document has them.
+  const contentsHeadings = [];
   for (const file of chapters) {
     chapterChildren.push(...sectionFromFile(file, tracker));
+    for (const block of parseMarkdown(fs.readFileSync(path.join(DRAFT, file), 'utf8'))) {
+      if (block.type === 'heading' && block.level <= 3) {
+        contentsHeadings.push({ text: block.text, level: block.level });
+      }
+    }
   }
 
   const referencesChildren = [];
   referencesChildren.push(heading1Paragraph('REFERENCES'));
+  contentsHeadings.push({ text: 'REFERENCES', level: 1 });
   const referencesBlocks = parseMarkdown(fs.readFileSync(path.join(DRAFT, 'references.md'), 'utf8')).filter((b) => b.type !== 'heading');
   for (const block of referencesBlocks) {
     if (block.type === 'paragraph') {
@@ -777,11 +831,22 @@ function main() {
 
   const appendicesMd = fs.readFileSync(path.join(DRAFT, 'appendices.md'), 'utf8');
   const appendicesChildren = renderBlocks(parseMarkdown(appendicesMd), tracker);
+  for (const block of parseMarkdown(appendicesMd)) {
+    if (block.type === 'heading' && block.level <= 3) {
+      contentsHeadings.push({ text: block.text, level: block.level });
+    }
+  }
   const hasPublicationDetails = /^#{1,3}\s+publication\s+details\b/im.test(appendicesMd);
 
   const bodyChildren = [];
 
   bodyChildren.push(heading1Paragraph('ABSTRACT'));
+  contentsHeadings.unshift(
+    { text: 'ABSTRACT', level: 1 },
+    { text: 'LIST OF TABLES', level: 1 },
+    { text: 'LIST OF FIGURES', level: 1 },
+    { text: 'LIST OF ABBREVIATIONS', level: 1 }
+  );
   for (const block of abstract) {
     bodyChildren.push(new Paragraph({ children: inlineRuns(block.text) }));
   }
@@ -793,11 +858,12 @@ function main() {
       spacing: { before: 240, after: 240 },
       children: [new TextRun({ text: 'TABLE OF CONTENTS', font: BODY_FONT, size: 32, bold: true })],
     }),
-    new TableOfContents('Table of Contents', {
-      hyperlink: true,
-      headingStyleRange: '1-3',
-    })
   );
+
+  const pages = measuredPages();
+  for (const entry of contentsHeadings) {
+    bodyChildren.push(contentsEntry(entry.text, entry.level, pages[entry.text]));
+  }
 
   bodyChildren.push(heading1Paragraph('LIST OF TABLES'));
   bodyChildren.push(captionListTable(tracker.tables, 'Table No.'));

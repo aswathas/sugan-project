@@ -377,15 +377,18 @@ for (const [file, title, cap] of modelSlides) {
   bullets(
     slide,
     [
-      'A dashboard in the shape of a file drive: shared with me, sent by me, recent, a search box and a card per file.',
+      'A dashboard in the shape of a file drive: shared with me, sent by me, starred, recent and trashed, with sorting, a grid and a list view, selection with bulk actions, and the keyboard shortcuts of a file drive.',
+      'Drag a card onto a person to share it, the way a file drive does.',
       'Google sign-in, with the identity token verified on the server against Google’s published keys.',
       'A self-destruct timer on every share; when the time is up the server gives up the bytes.',
-      'Revocation: the sender can call a share off before the recipient opens it.',
+      'Revocation and a trash: the sender can call a share off, or delete it and restore it later.',
       'An end-to-end integrity check: the sender’s SHA-256 fingerprint of the file, recomputed after decryption.',
+      'A signature per share, so the recipient can prove who sent it.',
+      'A password on a share, so the file cannot be opened without it.',
+      'A twelve word recovery phrase, so a lost device does not mean lost files.',
       'An audit trail whose entries are chained by hash, so an edited entry breaks the chain.',
-      'Hardening: a content security policy, a lockout after repeated failed sign-ins, and sign-out everywhere.',
     ],
-    { x: 0.9, y: 1.8, w: 7.3, h: 4.7, fontSize: 13 }
+    { x: 0.9, y: 1.75, w: 7.3, h: 5.0, fontSize: 12 }
   );
   slide.addImage({ path: path.join(SHOTS, '03-sent.png'), x: 8.6, y: 1.85, w: 3.95, h: 2.52 });
   caption(slide, 'After a send: the file’s own first bytes next to the bytes the server holds.', 8.6, 4.45, 3.95);
@@ -405,11 +408,11 @@ for (const [file, title, cap] of modelSlides) {
     [
       ['Software / technology', 'Purpose'],
       ['Node.js node:http and node:crypto', 'Server, password hashing, session tokens and the hash-chained audit trail; no framework and no package'],
-      ['Web Cryptography API', 'RSA-OAEP key pairs, AES-GCM encryption and SHA-256 fingerprints, in the browser'],
+      ['Web Cryptography API', 'RSA-OAEP and ECDSA keys, AES-GCM and AES-KW, PBKDF2 and SHA-256, all in the browser'],
       ['Google Identity Services and the JWKS', 'Sign-in by Google; the identity token is verified on the server with node:crypto'],
       ['IndexedDB', 'Non-extractable private key, stored on the user’s own device'],
       ['JSON store and blob directory', 'Accounts, share metadata and ciphertext on disk'],
-      ['Vanilla JavaScript front end', 'Register, verify, send, open; a dashboard, no build step'],
+      ['Vanilla JavaScript front end', 'Register, verify, send, open; a file drive workspace, no build step'],
       ['Headless Chrome over the DevTools protocol', 'Automated verification of the real interface in two profiles'],
       ['Git and GitHub', 'Version control and the public repository'],
     ],
@@ -433,6 +436,7 @@ for (const [file, title, cap] of modelSlides) {
       'End-to-end encryption protects confidentiality by encrypting files before transmission, so the storage server cannot read them.',
       'Key management keeps the private key on the device, so a compromise of the server does not compromise the files.',
       'A self-destruct timer, revocation, an integrity fingerprint and a tamper-evident audit trail now guard each share.',
+      'A signature, a password and a recovery phrase complete the keys, so a file can be proved to be from its sender and a lost device can be replaced.',
       'The prototype is a practical, free system that runs on any laptop with no installation and no paid service.',
     ],
     { x: 0.9, y: 1.8, w: 7.6, h: 4.4, fontSize: 13 }
@@ -440,10 +444,10 @@ for (const [file, title, cap] of modelSlides) {
   slide.addShape(pptx.ShapeType.rect, { x: 8.85, y: 1.8, w: 3.6, h: 3.5, fill: { color: INK } });
   slide.addText('STATED LIMITS', { x: 9.05, y: 2.0, w: 3.2, h: 0.3, fontFace: FONT, fontSize: 11, bold: true, color: AMBER, margin: 0 });
   slide.addText(
-    'View-only is an interface rule, not a cryptographic one: once a recipient decrypts, the plaintext is theirs.\n\nThe server holds a SHA-256 fingerprint of the plaintext, which is a content fingerprint.\n\nRevocation cannot un-download a file the recipient already has.\n\nA lost device means a lost private key and unreadable files.',
+    'View-only is an interface rule, not a cryptographic one, unless the share is protected with a password: then it cannot be decrypted at all without it.\n\nThe server holds a SHA-256 fingerprint of the plaintext, which is a content fingerprint.\n\nRevocation cannot un-download a file the recipient already has.\n\nA recovery phrase written on paper is a secret on paper.',
     { x: 9.05, y: 2.35, w: 3.2, h: 2.85, fontFace: FONT, fontSize: 10, color: PAPER, margin: 0, lineSpacingMultiple: 1.12 }
   );
-  slide.addText('Future work: digital signatures, key recovery, forward secrecy, attribute-based policies, and a deployment that survives the loss of the single node.', {
+  slide.addText('Future work: a hardware backed signing key, a recovery scheme that is not a written phrase, forward secrecy, attribute-based policies, and a deployment that survives the loss of the single node.', {
     x: 8.85, y: 5.55, w: 3.6, h: 1.3, fontFace: FONT, fontSize: 11, color: MUTED, margin: 0, lineSpacingMultiple: 1.15,
   });
 }

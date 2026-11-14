@@ -72,3 +72,7 @@
 | `docs/reportspec-v2.md` | added | the brief given to the writing agent: the new features, the full interface, the check counts and what may not be invented | read back before the chapters were accepted |
 | `docs/deck-rebuild-task.md` | added | the brief given to the agent that rebuilt the title slide | read back after the rebuild |
 | `docs/report-rebuild-task.md` | added | the brief given to the agent that rebuilt the report builder | read back after the rebuild |
+| `public/keyguard.js` | added | the extra keys in one place: the signing key, the password wrapping and the recovery phrase, all Web Crypto and no dependency | the browser test covers the signature, the password and the phrase |
+| `tools/build-deliverables.js` | added | builds the report in two passes so the contents page carries the real page numbers, and renders the PDF | every contents entry was checked against the page it lands on |
+| `docs/reportspec-v3.md` | added | the brief for the workspace and lifecycle part of the report | read back after the chapters were accepted |
+| `docs/reportspec-v4.md` | added | the brief for the three extra keys in the report | read back after the chapters were accepted |

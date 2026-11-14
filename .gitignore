@@ -3,3 +3,4 @@ data/
 *.log
 report/pg*.png
 report/slide-*.png
+report/.toc.json
