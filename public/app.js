@@ -235,17 +235,20 @@ function askForTotp(session) {
   $('login-form').classList.add('hidden');
   $('totp-form').classList.remove('hidden');
   $('login-totp-code').value = '';
+  // Name the account the server is talking about: the factor belongs to that
+  // record, not to the person, and the two are not always the same.
+  const who = session.account || session.username || $('login-username').value.trim();
   if (session.enrol) {
     $('login-enrol').classList.remove('hidden');
     $('login-secret').textContent = session.secret;
     $('login-uri').textContent = session.uri;
     $('login-qr').innerHTML = qrFor(session.uri);
     $('login-totp-note').textContent =
-      'This account has never had an authenticator, so it gets one now. Scan the code with your phone, then enter the six digits it shows.';
+      `This account (${who}) has no authenticator on the server yet, so it gets one now. Scan the code with your phone, then enter the six digits it shows. If the phone already holds an entry for this account, delete that entry and scan this one: an old entry will not open the account.`;
   } else {
     $('login-enrol').classList.add('hidden');
     $('login-totp-note').textContent =
-      'This account has a second factor. Enter the six digit code from your authenticator app.';
+      `This account (${who}) has a second factor. Enter the six digit code from your authenticator app.`;
   }
   $('login-totp-code').focus();
 }
@@ -262,7 +265,7 @@ async function signIn(username, password) {
 async function completeSignIn(username) {
   pendingChallenge = null;
   $('totp-form').classList.add('hidden');
-  $('login-form').classList.remove('hidden');
+  showAuthForm('login-form');
   me = username;
   myKeys = (await idbGet(me)) || null;
   await recoverKeyIfAsked(username);
@@ -456,6 +459,18 @@ function setTab(which) {
   $('tab-register').setAttribute('aria-pressed', String(!login));
   $('login-form').classList.toggle('hidden', !login);
   $('register-form').classList.toggle('hidden', login);
+  if (!login) {
+    $('code-form').classList.add('hidden');
+    $('relink-form').classList.add('hidden');
+  }
+}
+
+// The three ways into the account share one panel: the password, the
+// authenticator code, and the relink that replaces a lost authenticator.
+function showAuthForm(which) {
+  $('login-form').classList.toggle('hidden', which !== 'login-form');
+  $('code-form').classList.toggle('hidden', which !== 'code-form');
+  $('relink-form').classList.toggle('hidden', which !== 'relink-form');
 }
 
 /* ---------------- google sign-in ---------------- */
@@ -2270,6 +2285,75 @@ function bindEvents() {
     $('totp-form').classList.add('hidden');
     $('login-form').classList.remove('hidden');
     $('login-username').focus();
+  });
+
+  // The authenticator alone: the phone holds the secret, so the six digits it
+  // shows open the account.
+  $('code-toggle').addEventListener('click', () => {
+    showAuthForm('code-form');
+    $('code-username').focus();
+  });
+
+  $('code-back').addEventListener('click', () => {
+    showAuthForm('login-form');
+    $('login-username').focus();
+  });
+
+  $('code-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    $('auth-error').textContent = '';
+    try {
+      const result = await api('/api/login/code', {
+        method: 'POST',
+        body: { username: $('code-username').value.trim(), code: $('code-value').value.trim() },
+      });
+      await completeSignIn(result.username);
+    } catch (err) {
+      $('auth-error').textContent = err.message;
+    }
+  });
+
+  // The phone is lost: the email on the account proves it, and the
+  // authenticator is replaced with a new one the phone scans again.
+  $('relink-toggle').addEventListener('click', () => {
+    showAuthForm('relink-form');
+    $('relink-username').focus();
+  });
+
+  $('relink-back').addEventListener('click', () => {
+    showAuthForm('login-form');
+    $('login-username').focus();
+  });
+
+  $('relink-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    $('auth-error').textContent = '';
+    $('relink-note').textContent = '';
+    const username = $('relink-username').value.trim();
+    try {
+      if ($('relink-code-field').classList.contains('hidden')) {
+        const result = await api('/api/login/relink', { method: 'POST', body: { username } });
+        $('relink-code-field').classList.remove('hidden');
+        $('relink-submit').textContent = 'Relink my authenticator';
+        $('relink-note').textContent = result.demoCode
+          ? `Demo mode: no email service is configured, so the code is ${result.demoCode}.`
+          : 'A six digit code is on its way to the email on the account.';
+      } else {
+        const result = await api('/api/login/relink/confirm', {
+          method: 'POST',
+          body: { username, code: $('relink-code').value.trim() },
+        });
+        $('relink-qr-block').classList.remove('hidden');
+        $('relink-secret').textContent = result.secret;
+        $('relink-uri').textContent = result.uri;
+        $('relink-qr').innerHTML = qrFor(result.uri);
+        $('relink-submit').classList.add('hidden');
+        $('relink-note').textContent =
+          'Scan this with the phone, then sign in with the code. The old entry in the app will not open the account any more: delete it.';
+      }
+    } catch (err) {
+      $('auth-error').textContent = err.message;
+    }
   });
 
   $('register-form').addEventListener('submit', async (event) => {

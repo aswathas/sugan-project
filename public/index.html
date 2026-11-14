@@ -78,7 +78,56 @@
             <p class="note">
               <button id="recovery-toggle" class="linkish" type="button">Restore my key on a new device</button>
             </p>
+            <p class="note">
+              <button id="code-toggle" class="linkish" type="button">I have my authenticator code</button>
+              <button id="relink-toggle" class="linkish" type="button">Lost your authenticator? Relink it</button>
+            </p>
             <button class="btn btn--primary" type="submit">Sign in</button>
+          </form>
+
+          <!-- Once the phone holds the secret, the six digits it shows are the
+               proof. The account name is still asked for, because six digits
+               say nothing about whose code they are. -->
+          <form id="code-form" class="hidden">
+            <div class="field">
+              <label class="route__label" for="code-username">Username</label>
+              <input class="input" id="code-username" autocomplete="username" required>
+            </div>
+            <div class="field">
+              <label class="route__label" for="code-value">Authenticator code</label>
+              <input class="input" id="code-value" inputmode="numeric" autocomplete="one-time-code" required>
+            </div>
+            <button class="btn btn--primary" type="submit">Sign in with the code</button>
+            <p class="note">
+              <button id="code-back" class="linkish" type="button">Use my password instead</button>
+            </p>
+          </form>
+
+          <!-- The phone is gone: the email on the account proves it, and the
+               authenticator is replaced with a new one the phone scans again. -->
+          <form id="relink-form" class="hidden">
+            <div class="field">
+              <label class="route__label" for="relink-username">Username</label>
+              <input class="input" id="relink-username" autocomplete="username" required>
+            </div>
+            <div class="field hidden" id="relink-code-field">
+              <label class="route__label" for="relink-code">Code from your email</label>
+              <input class="input" id="relink-code" inputmode="numeric" autocomplete="one-time-code">
+            </div>
+            <div class="hidden" id="relink-qr-block">
+              <div class="qr-row">
+                <div class="qr" id="relink-qr"></div>
+                <div class="qr-row__side">
+                  <p class="key-chip" id="relink-secret"></p>
+                  <pre class="code-sample__pre"><code id="relink-uri"></code></pre>
+                </div>
+              </div>
+            </div>
+            <p class="note" id="relink-note"></p>
+            <button class="btn btn--primary" type="submit" id="relink-submit">Send me a code</button>
+            <p class="note">
+              <button id="relink-back" class="linkish" type="button">Back to sign in</button>
+            </p>
           </form>
 
           <!-- The second factor is a step of its own. The password, or Google,
@@ -92,10 +141,8 @@
               </p>
             </div>
             <div id="login-enrol" class="hidden">
-              <p class="note">
-                This account has never had an authenticator, so it gets one now. Scan the code with
-                the phone camera, then enter the six digits the phone shows.
-              </p>
+              <!-- The note above carries the wording: it names the account, which
+                   only the server knows. -->
               <div class="qr-row">
                 <div class="qr" id="login-qr"></div>
                 <div class="qr-row__side">

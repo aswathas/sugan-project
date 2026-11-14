@@ -342,6 +342,18 @@ async function signUp(cdp, sessionId, username) {
       alicePage,
       "document.getElementById('login-secret').textContent.trim()"
     );
+    // The note must say which account is being enrolled: the factor belongs to
+    // a record, and one address can carry two of them.
+    const enrolNote = await evaluate(
+      alice,
+      alicePage,
+      "document.getElementById('login-totp-note').textContent"
+    );
+    assert.ok(
+      enrolNote.includes('alice@example.com'),
+      'the enrolment note must name the account'
+    );
+    console.log('PASS  the enrolment note names the account');
     const totp = require('../server/totp.js');
     const enrolCode = totp.codeAt(enrolSecret, Math.floor(Date.now() / 1000 / 30));
     // The setup shows a code the phone's camera can read.
@@ -1010,6 +1022,116 @@ async function signUp(cdp, sessionId, username) {
     const signedOut = await evaluate(bob, bobPage, "fetch('/api/me').then((r) => r.status)");
     assert.strictEqual(signedOut, 401, 'the session must be gone after signing out');
     console.log('PASS  signing out needs no code, and the session ends');
+
+    // The authenticator alone opens the account: the phone holds the secret,
+    // so the six digits it shows are the proof.
+    await evaluate(alice, alicePage, "document.getElementById('logout').click()");
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('auth').classList.contains('hidden')",
+      'the sign in page is back before the code sign in'
+    );
+    await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        document.getElementById('code-toggle').click();
+        document.getElementById('code-username').value = 'alice';
+        document.getElementById('code-value').value = ${JSON.stringify(
+          totp.codeAt(enrolSecret, Math.floor(Date.now() / 1000 / 30))
+        )};
+        document.getElementById('code-form').requestSubmit();
+        return true;
+      })()`
+    );
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('app').classList.contains('hidden') && document.getElementById('who').textContent === 'alice'",
+      'the code alone opens the account'
+    );
+    console.log('PASS  the authenticator code alone opens the account');
+
+    // The phone is lost: the email on the account proves it, and the
+    // authenticator is replaced with a new one the phone scans again.
+    await evaluate(alice, alicePage, "document.getElementById('logout').click()");
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('auth').classList.contains('hidden')",
+      'the sign in page is back before the relink'
+    );
+    await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        document.getElementById('relink-toggle').click();
+        document.getElementById('relink-username').value = 'alice';
+        document.getElementById('relink-form').requestSubmit();
+        return true;
+      })()`
+    );
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('relink-code-field').classList.contains('hidden')",
+      'the relink asks for the code from the email'
+    );
+    const relinkNote = await evaluate(
+      alice,
+      alicePage,
+      "document.getElementById('relink-note').textContent"
+    );
+    const mailCode = relinkNote.match(/(\d{6})/);
+    assert.ok(mailCode, 'the demo mode must show the code that was sent to the email');
+    await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        document.getElementById('relink-code').value = ${JSON.stringify(mailCode[1])};
+        document.getElementById('relink-form').requestSubmit();
+        return true;
+      })()`
+    );
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('relink-qr-block').classList.contains('hidden')",
+      'the new authenticator is shown to scan'
+    );
+    const relinkQr = await evaluate(
+      alice,
+      alicePage,
+      "document.querySelectorAll('#relink-qr svg rect, #relink-qr svg path').length"
+    );
+    assert.ok(relinkQr > 0, 'the relink must show a code the phone can scan');
+    const newSecret = await evaluate(
+      alice,
+      alicePage,
+      "document.getElementById('relink-secret').textContent.trim()"
+    );
+    // The new phone opens the account, and the lost one cannot.
+    await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        document.getElementById('code-toggle').click();
+        document.getElementById('code-username').value = 'alice';
+        document.getElementById('code-value').value = ${JSON.stringify(
+          totp.codeAt(newSecret, Math.floor(Date.now() / 1000 / 30))
+        )};
+        document.getElementById('code-form').requestSubmit();
+        return true;
+      })()`
+    );
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('app').classList.contains('hidden') && document.getElementById('who').textContent === 'alice'",
+      'the relinked phone opens the account'
+    );
+    console.log('PASS  a lost authenticator is relinked by the email, and the new one opens the account');
 
     // A reload must not cost a sign-in: the session cookie lasts a week.
     await alice.send('Page.navigate', { url: SITE }, alicePage);

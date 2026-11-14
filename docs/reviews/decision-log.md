@@ -449,8 +449,64 @@
   documentation that free web services have an ephemeral filesystem and cannot mount a disk.
 - Consequence: a retried sign-in no longer orphans the entry in the phone, and the remaining cause is
   named out loud instead of showing up as a mysterious message from the app.
+
+## D26 - The sign-in names the account, so "this account" is not a riddle
+
+- Prompt: "why is showing like this i have alredy logged in using authenticator".
+- Decision: the sentence on the enrolment screen now names the account the server is talking about
+  (`This account (aswathas13@gmail.com) has no authenticator on the server yet...`), and it says what
+  to do with the entry the phone already holds: delete it and scan this one, because an old entry
+  cannot open the account. The reason the message was confusing is that the factor belongs to a
+  **record**, not to a person or an email address: the same address can carry two records (locally
+  `aswath` and `aswathas13` both hold `aswathas13@gmail.com`), and only the record that signed in
+  through Google holds the factor, so the other one is told it "has never had an authenticator".
+  The server therefore returns the account's own email on every sign-in that wants the second
+  factor, and the page prints it. The duplicated paragraph in the markup was removed, so the
+  instruction is said once, in one place.
+- Alternatives considered: (a) leaving the wording as it was and explaining it only in a chat answer,
+  which fixes nothing for the next person who signs in; (b) merging the two records that share an
+  email, which is a data migration on a database that Render wipes on every restart, so the
+  duplication will come back anyway; (c) showing the username instead of the email, which is less
+  recognisable to the person holding the phone.
+- Evidence: `test/selftest.js` asserts that both the enrolment reply and the later sign-in carry the
+  account's email; `npm test` and `npm run test:browser` pass; the wording was read back in the
+  running page.
+- Consequence: the screen says which account is being enrolled and what to do about the entry the
+  phone already has, and the platform half of the problem stays visible instead of hiding in a
+  mysterious message.
+
+## D27 - The authenticator alone opens the account, and a lost one can be relinked
+
+- Prompt: "once if we logged in using google authenticator next time only the auth code is enough ,
+  and a button if we forgot or lost google authenticator link to relink".
+- Decision: two things were added, both on the sign in page. **The code alone signs in.** A new
+  route `POST /api/login/code` takes the account name and the six digits, verifies them against the
+  stored secret and issues the session, so after the first enrolment the phone is the only thing
+  needed. The account name is still asked for, because six digits say nothing about whose code they
+  are; the failed attempts are counted under the same lockout the password sign in uses, so the
+  route is not a way to guess codes freely. **A lost phone can be relinked.** A button on the sign
+  in page asks for the account name, mails a one-time code to the address already on the account
+  (the same mailer the registration check uses), and on the right code replaces the authenticator
+  secret with a new one and shows it as a QR to scan. The old entry in the phone stops working at
+  that moment, which is the point of relinking.
+- Alternatives considered: (a) making the password optional without a code, which would have left
+  the account with no factor at all; (b) recovering the old secret instead of replacing it, which
+  needs the phone that was lost; (c) recovering by the recovery phrase, which restores the private
+  key and not the second factor, and which a person who lost the phone may still have; (d) asking
+  for the old code during a relink, which is exactly what a person who lost the phone cannot give.
+- Evidence: `test/selftest.js` signs a fresh account in with the code alone, refuses a wrong code,
+  relinks it with the emailed code and shows that the old secret no longer opens the account while
+  the new one does; `npm run test:browser` signs in through the page with the code alone and relinks
+  through the page and reads the new code; both suites pass.
+- Consequence: the authenticator is now a sign in on its own, and the email address on the account
+  is the way back in when the phone is gone. Both are worth saying out loud: a code read over
+  somebody's shoulder opens the account without the password, and an account whose email is
+  compromised can have its authenticator replaced. The email code expires like the registration one
+  and the wrong attempts are counted.
 | 2026-11-15 | The faculty demonstration is delivered as a four-page PDF (`report/SecureShare-Demo-Instructions.pdf`), built from `docs/instructions/demo-instructions.html` with headless Chrome, and sent to Sugan on WhatsApp with the live link, the GitHub link and the file attached | He has to show the faculty that the files are encrypted; a written walkthrough with the evidence and the links carries more than a chat message | user instruction: "send sugandhan the link of the project and github also instruction pdf" |
 | 2026-11-15 | The 3D scene was rebuilt by agy (Gemini 4 Hydrogen), under a written brief that fixed the style rules, the six-step story and the `window.__journey` contract the browser suite reads | the scene is a large, well-specified change that does not touch the same files as the delivery work | user instruction: "use agy hydrogen to do this" |
 | 2026-11-15 | Sugan gets the project links and the instruction PDF on WhatsApp, and the PDF is sent again when the scene changes under it | he has to show the faculty that the files are encrypted, and what he holds must match the live site | user instruction: "send sugandhan the link of the project and github also instruction pdf" |
 | 2026-11-15 | The 3D scene is drawn from a corner, the press is a frame the sheet slides under, and the floor gained a drawn horizon | the straight-on view hid every part that has depth, and the press was a solid plate the sheet passed through | user instruction: "i told you improvise the 3d components?" |
 | 2026-11-15 | A pending authenticator secret is handed back for the ten minutes it is good for, instead of a fresh one on every attempt | a reload or a second click was orphaning the entry the phone had already scanned | user instruction: "why everyhtime i need register with authenticator of google its saying you have never registered with this account" |
+| 2026-11-15 | The sign-in names the account it is enrolling, and says what to do with the entry the phone already holds | "this account" was a riddle: the factor belongs to a record, and one address can carry two of them | user instruction: "why is showing like this i have alredy logged in using authenticator" |
+| 2026-11-15 | The authenticator code alone opens the account, and a lost authenticator can be relinked by a code sent to the email on the account | after the first enrolment the phone should be enough to sign in, and a lost phone should not lock the account away | user instruction: "once if we logged in using google authenticator next time only the auth code is enough, and a button if we forgot or lost google authenticator link to relink" |

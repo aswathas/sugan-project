@@ -273,12 +273,13 @@ async function handleApi(req, res, url) {
         enrol: true,
         challenge,
         username: user.username,
+        account: user.email,
         keyProvided,
         secret: totp.group(secret),
         uri: totp.uri(secret, user.username),
       });
     }
-    return json(res, 200, { requiresTotp: true, challenge, username: user.username, keyProvided });
+    return json(res, 200, { requiresTotp: true, challenge, username: user.username, account: user.email, keyProvided });
   }
 
   if (route === 'POST /api/register') {
@@ -413,11 +414,104 @@ async function handleApi(req, res, url) {
         requiresTotp: true,
         enrol: true,
         challenge,
+        account: user.email,
         secret: totp.group(secret),
         uri: totp.uri(secret, username),
       });
     }
-    return json(res, 200, { requiresTotp: true, challenge });
+    return json(res, 200, { requiresTotp: true, challenge, account: user.email });
+  }
+
+  // The authenticator alone opens the account: the phone holds the secret, so
+  // the six digits it shows are the proof. The account name is still asked
+  // for, because six digits say nothing about whose code they are.
+  if (route === 'POST /api/login/code') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const username = String(body.username || '').trim();
+    const attempts = db.loginAttempts || {};
+    const record = attempts[username];
+    if (record && record.count >= MAX_LOGIN_ATTEMPTS && record.until > Date.now()) {
+      return json(res, 429, {
+        error: `too many failed sign-ins, try again in ${Math.ceil((record.until - Date.now()) / 60000)} minutes`,
+      });
+    }
+    const user = db.users[username];
+    if (user && !user.totpSecret) {
+      return json(res, 409, {
+        error: 'this account has no authenticator yet, sign in with your password to set one up',
+      });
+    }
+    if (user && !user.verified) {
+      return json(res, 403, { error: 'verify your email with the code first' });
+    }
+    if (!user || !totp.verify(user.totpSecret, String(body.code || '').trim())) {
+      if (record) {
+        record.count += 1;
+        record.until = Date.now() + 15 * 60 * 1000;
+      } else {
+        attempts[username] = { count: 1, until: Date.now() + 15 * 60 * 1000 };
+      }
+      db.loginAttempts = attempts;
+      save(db);
+      return json(res, 401, { error: 'that account name or code is not right' });
+    }
+    delete attempts[username];
+    db.loginAttempts = attempts;
+    const token = newToken();
+    db.sessions[token] = { username, expires: Date.now() + SESSION_TTL_MS };
+    save(db);
+    res.setHeader('Set-Cookie', `sid=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`);
+    return json(res, 200, { username });
+  }
+
+  // The phone is gone, or the authenticator app was reset. The email address
+  // on the account proves it: a one-time code goes there, and the
+  // authenticator is replaced with a new one the phone scans again.
+  if (route === 'POST /api/login/relink') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const username = String(body.username || '').trim();
+    const user = db.users[username];
+    if (!user || !user.email) {
+      return json(res, 404, { error: 'no account with that name' });
+    }
+    const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+    const otp = hashPassword(code);
+    user.otp = { salt: otp.salt, hash: otp.hash, expires: Date.now() + OTP_TTL_MS, attempts: 0 };
+    save(db);
+    const delivery = await deliverOtp(user.email, code);
+    return json(res, 200, {
+      delivery: delivery.mode,
+      // In console mode the code never leaves this machine; showing it keeps
+      // the demo runnable without any email account.
+      demoCode: delivery.mode === 'console' ? code : undefined,
+    });
+  }
+
+  if (route === 'POST /api/login/relink/confirm') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const username = String(body.username || '').trim();
+    const user = db.users[username];
+    if (!user || !user.otp || user.otp.expires < Date.now()) {
+      return json(res, 400, { error: 'that code has expired, ask for a new one' });
+    }
+    if (!verifyPassword(String(body.code || '').trim(), user.otp.salt, user.otp.hash)) {
+      user.otp.attempts = (user.otp.attempts || 0) + 1;
+      if (user.otp.attempts >= MAX_OTP_ATTEMPTS) {
+        delete user.otp;
+        save(db);
+        return json(res, 429, { error: 'too many wrong codes, ask for a new one' });
+      }
+      save(db);
+      return json(res, 401, { error: 'that code is not right' });
+    }
+    delete user.otp;
+    // The new secret replaces the old one, so the lost phone cannot open the
+    // account and the phone that scans this one can.
+    const secret = totp.generateSecret();
+    user.totpSecret = secret;
+    save(db);
+    logEvent('totp_relinked', username, null, null);
+    return json(res, 200, { secret: totp.group(secret), uri: totp.uri(secret, username) });
   }
 
   if (route === 'POST /api/login/totp') {

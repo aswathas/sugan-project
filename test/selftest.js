@@ -404,6 +404,9 @@ async function verify(username, code) {
   assert.strictEqual(aliceBack.body.enrol, true, 'an account with no factor must be given one');
   assert.ok(aliceBack.body.secret && aliceBack.body.uri, 'the setup must give a secret and an address');
   assert.ok(aliceBack.body.uri.startsWith('otpauth://totp/'), 'the address must be one an app can read');
+  // The sign-in names the account the factor belongs to: two records can
+  // carry one email address, and the factor lives on the record.
+  assert.strictEqual(aliceBack.body.account, 'alice@example.com', 'the sign-in must name the account');
   assert.ok(
     !aliceBack.headers.get('set-cookie'),
     'no session may be issued before the second factor'
@@ -519,6 +522,7 @@ async function verify(username, code) {
     body: { username: 'alice', password: 'correct-horse' },
   });
   assert.strictEqual(freshLogin.body.requiresTotp, true, 'every sign-in wants the second factor');
+  assert.strictEqual(freshLogin.body.account, 'alice@example.com', 'the sign-in must name the account');
   // The account holds a factor now, so the sign-in asks for the code instead of
   // handing out a new secret.
   assert.strictEqual(freshLogin.body.enrol, undefined, 'an account with a factor is not given another');
@@ -545,6 +549,58 @@ async function verify(username, code) {
   assert.strictEqual(noDigest.status, 400, 'a share without a fingerprint must be refused');
 
   console.log('PASS  the trail survives the cut, and a share without a fingerprint is refused');
+
+  // The authenticator alone opens the account: the phone holds the secret, so
+  // the six digits it shows are the proof.
+  const linky = await makeUser('linky');
+  const linkyCode = await register(linky);
+  await verify('linky', linkyCode);
+  const firstSignIn = await call('/api/login', {
+    method: 'POST',
+    body: { username: 'linky', password: 'correct-horse' },
+  });
+  const linkySecret = firstSignIn.body.secret;
+  assert.ok(linkySecret, 'the first sign-in hands out the secret to scan');
+  await call('/api/login/totp', {
+    method: 'POST',
+    body: { challenge: firstSignIn.body.challenge, code: totp.codeAt(linkySecret, step()) },
+  });
+  const codeOnly = await call('/api/login/code', {
+    method: 'POST',
+    body: { username: 'linky', code: totp.codeAt(linkySecret, step()) },
+  });
+  assert.strictEqual(codeOnly.status, 200, 'the code alone must open the account');
+  assert.ok(codeOnly.headers.get('set-cookie'), 'the code alone must give a session');
+  const refusedCode = await call('/api/login/code', {
+    method: 'POST',
+    body: { username: 'linky', code: '000000' },
+  });
+  assert.strictEqual(refusedCode.status, 401, 'a wrong code must open nothing');
+
+  // The phone is gone: the email on the account proves it, and the
+  // authenticator is replaced with a new one the phone scans again.
+  const relink = await call('/api/login/relink', {
+    method: 'POST',
+    body: { username: 'linky' },
+  });
+  assert.strictEqual(relink.status, 200, 'the relink must ask the email for a code');
+  const relinked = await call('/api/login/relink/confirm', {
+    method: 'POST',
+    body: { username: 'linky', code: relink.body.demoCode },
+  });
+  assert.strictEqual(relinked.status, 200, 'the code from the email must relink the authenticator');
+  const lostPhone = await call('/api/login/code', {
+    method: 'POST',
+    body: { username: 'linky', code: totp.codeAt(linkySecret, step()) },
+  });
+  assert.strictEqual(lostPhone.status, 401, 'the lost phone must not open the account any more');
+  const newPhone = await call('/api/login/code', {
+    method: 'POST',
+    body: { username: 'linky', code: totp.codeAt(relinked.body.secret, step()) },
+  });
+  assert.strictEqual(newPhone.status, 200, 'the relinked phone must open the account');
+
+  console.log('PASS  the authenticator alone opens the account, and a lost one can be relinked');
 
   server.close();
   fs.rmSync(DATA_DIR, { recursive: true, force: true });
