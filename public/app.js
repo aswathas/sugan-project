@@ -261,15 +261,25 @@ async function completeSignIn(username) {
   me = username;
   myKeys = (await idbGet(me)) || null;
   await recoverKeyIfAsked(username);
+  if (!myKeys) {
+    // The private key never leaves the browser that made it, so this device
+    // holds none for this account. Nothing in the workspace can be opened
+    // without it, so the sign in page asks for the twelve words that bring it
+    // back, rather than opening a workspace that cannot work.
+    askForRecoveryPhrase();
+    return;
+  }
   showApp();
   await refresh();
   await uploadBackup();
-  if (!myKeys) {
-    setMainStatus(
-      'No key pair on this device for this account, so files sent to you cannot be decrypted here.',
-      'error'
-    );
-  }
+}
+
+// The sign in page, with the box for the twelve words open and waiting.
+function askForRecoveryPhrase() {
+  $('recovery-field').classList.remove('hidden');
+  $('auth-error').textContent =
+    'This device holds no key for this account, so nothing sent to you can be opened here. Type your twelve word recovery phrase in the box, then sign in again.';
+  $('recovery-phrase').focus();
 }
 
 // A reload should not cost a sign-in. The session cookie lasts a week, so the
@@ -283,15 +293,14 @@ async function restoreSession() {
   }
   me = session.username;
   myKeys = (await idbGet(me)) || null;
+  if (!myKeys) {
+    // A session without a key on this device cannot open anything, so the
+    // sign in page stays and asks for the phrase.
+    askForRecoveryPhrase();
+    return;
+  }
   showApp();
   await refresh();
-  if (!myKeys) {
-    $('recovery-field').classList.remove('hidden');
-    setMainStatus(
-      'This device holds no key pair for this account, so files sent to you cannot be decrypted here. Enter your recovery phrase to restore it.',
-      'error'
-    );
-  }
 }
 
 /* ---------------- the second factor ---------------- */
@@ -374,9 +383,13 @@ async function recoverKeyIfAsked(username) {
     const existing = (await idbGet(username)) || {};
     await idbPut(username, { ...existing, privateKey, phrase });
     myKeys = await idbGet(username);
+    $('auth-error').textContent = '';
     setMainStatus('The recovery phrase worked. Your private key is back on this device.', 'ok');
   } catch (err) {
-    setMainStatus(`That phrase did not unlock the key: ${err.message}`, 'error');
+    const message = `That phrase did not unlock the key: ${err.message}`;
+    setMainStatus(message, 'error');
+    // The sign in page is what the person is looking at, so the words go there.
+    $('auth-error').textContent = message;
   }
 }
 

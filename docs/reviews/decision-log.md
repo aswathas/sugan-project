@@ -305,3 +305,34 @@
 - Consequence: every session, by password or by Google, is held for one authenticator code;
   an account cannot turn its factor off; signing out is one click; the second factor is a step
   of its own instead of a field bolted to the sign-in form.
+
+## D21 - The scene drawn as a pencil, and the line that tells the story
+
+- Prompt: "give story line like arrow to touch 3d working like pencil drawing", and "why is this
+  coming?" about the "No key pair on this device" line.
+- Decision: two things changed. The three dimensional scene stopped being a lit render and became
+  a drawing: the tones are now pale graphite with one blue pencil, the light is soft and even, and
+  every surface carries the same pencil hatching, but the part that makes it a drawing is the
+  outline. Every part is drawn over with its own edges in graphite, and every vertex of every part
+  is nudged a little first, so the lines are not machine straight and the edges have a hand in
+  them. The outlines ride on the parts, so a press head that comes down is still drawn where it
+  is. On top of that sits the story line: the route the file takes, sampled from the same motion
+  the file follows, drawn as one stroke that grows as the file moves along it, with a blue pencil
+  arrowhead at the point of the stroke. The arrow is the only saturated thing in the scene, and it
+  is the thing the eye follows. The second change answers the message: the private key never
+  leaves the browser that made it, so a device that has never held that key cannot open anything.
+  Instead of opening a workspace that cannot work and then saying so in a line of red text, the
+  sign in page stays, the box for the twelve words opens, and the reason is named. The old
+  message told the person to enter a recovery phrase in a box that was not on the page.
+- Alternatives considered: (a) keep the render and add the arrow alone, which leaves the scene
+  reading as a CAD model with a line on it; (b) draw the arrow over everything with no depth test,
+  which cuts the file itself in half where the route crosses it; (c) put the recovery box in the
+  workspace, which is a bigger change for one message.
+- Evidence: the scene was captured at 1440x900 twice, once at the press and once at the end of
+  the story, and a close crop of the press and the hopper was read: the hatching, the ink
+  outlines and the hand in the lines are all there. The browser suite still drives the scene and
+  requires it to draw, label and move. The server suite, the browser suite, the live checks and
+  the design gate all pass.
+- Consequence: the scene reads as a pencil drawing of a machine, the story of the file is one
+  arrow that draws itself, and a person who signs in on a device without the key is told what to
+  do instead of being shown a broken workspace.

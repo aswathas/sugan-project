@@ -19,14 +19,17 @@ const readout = document.getElementById('readout');
 const css = getComputedStyle(document.documentElement);
 const tone = (name, fallback) => (css.getPropertyValue(name).trim() || fallback);
 
+// The scene is drawn, not rendered. Pale graphite fills, ink outlines, one
+// blue pencil for the line that tells the story.
 const PALETTE = {
-  lo: tone('--lo', '#dcdcd9'),
-  mid: tone('--mid', '#8a8a8f'),
-  hi: tone('--ink', '#26262a'),
+  lo: '#bcbab3',
+  mid: '#93928c',
+  hi: '#35353b',
   lit: tone('--accent', '#3e63dd'),
-  paper: tone('--face', '#ffffff'),
-  brass: tone('--brass', '#c9a227'),
+  paper: '#fbfbfa',
+  brass: '#7d7c77',
 };
+const GRAPHITE = '#33333a';
 
 /* ---------------- the renderer ---------------- */
 
@@ -49,9 +52,40 @@ camera.lookAt(0, 11, 0);
 
 const T = P.toneSet(PALETTE);
 
+// Every surface is matte and carries the same pencil hatching, so the parts
+// read as shaded by hand rather than by a lamp.
+function hatchTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, 128, 128);
+  ctx.strokeStyle = 'rgba(60, 60, 66, 0.22)';
+  ctx.lineWidth = 1;
+  for (let x = -128; x < 256; x += 5) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + 128, 128);
+    ctx.stroke();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(2, 2);
+  return texture;
+}
+
+for (const name of ['lo', 'mid', 'hi', 'brass', 'paper', 'lit']) {
+  const material = T[name];
+  material.roughness = 1;
+  material.metalness = 0;
+  if (name !== 'lit') material.map = hatchTexture();
+  material.needsUpdate = true;
+}
+
 /* ---------------- the light ---------------- */
 
-const sun = new THREE.DirectionalLight(0xffffff, 2.4);
+const sun = new THREE.DirectionalLight(0xffffff, 1.15);
 sun.position.set(-70, 120, 80);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -64,8 +98,10 @@ sun.shadow.camera.bottom = -110;
 sun.shadow.bias = -0.0006;
 sun.shadow.normalBias = 0.02;
 scene.add(sun);
-scene.add(new THREE.HemisphereLight(0xffffff, PALETTE.lo, 1.05));
-const rim = new THREE.DirectionalLight(0xffffff, 0.45);
+// The light is soft and even: a drawing is described by its lines, not by a
+// lamp with one hard shadow in it.
+scene.add(new THREE.HemisphereLight(0xffffff, PALETTE.paper, 0.95));
+const rim = new THREE.DirectionalLight(0xffffff, 0.22);
 rim.position.set(110, 46, -70);
 scene.add(rim);
 
@@ -73,10 +109,11 @@ scene.add(rim);
 
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(620, 320),
-  new THREE.MeshStandardMaterial({ color: tone('--shade', '#e6e5e0'), roughness: 1 })
+  new THREE.MeshStandardMaterial({ color: '#f4f3f0', roughness: 1 })
 );
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
+ground.userData.smooth = true;
 scene.add(ground);
 
 /* ---------------- the benches ---------------- */
@@ -292,7 +329,8 @@ function makePress() {
     arm.castShadow = true;
     head.add(arm);
   }
-  const die = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 3.4, 3.4, 24), T.lit);
+  // The die is graphite: the blue pencil belongs to the story line.
+  const die = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 3.4, 3.4, 24), T.hi);
   die.position.y = -5;
   die.castShadow = true;
   head.add(die);
@@ -424,6 +462,8 @@ const plate = new THREE.Group();
   );
   engraving.rotation.x = -Math.PI / 2;
   engraving.position.y = 0.95;
+  // The engraving is ink on the plate, not a part: it takes no outline.
+  engraving.userData.smooth = true;
   plate.add(engraving);
   P.screwCorners(plate, 24, 15, 0.9, T, 2, 0.9);
   plate.position.set(0, BENCH_TOP + 0.9, 16);
@@ -471,6 +511,51 @@ for (let i = 0; i < 3; i++) {
   c.rotation.y = 0.18 * i - 0.18;
   stored.push(c);
 }
+
+/* ---------------- the pencil pass ---------------- */
+
+// A drawn line has a hand in it. Every vertex of every part is nudged a
+// little, so the outlines that come off them are not machine straight.
+function roughen(root, amount = 0.34) {
+  let seed = 20261115;
+  const random = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  root.traverse((object) => {
+    if (!object.isMesh || object.userData.smooth) return;
+    const position = object.geometry?.attributes?.position;
+    if (!position) return;
+    for (let i = 0; i < position.count; i++) {
+      position.setXYZ(
+        i,
+        position.getX(i) + (random() - 0.5) * amount,
+        position.getY(i) + (random() - 0.5) * amount,
+        position.getZ(i) + (random() - 0.5) * amount
+      );
+    }
+    position.needsUpdate = true;
+    object.geometry.computeVertexNormals();
+  });
+}
+
+// The outline: each part is drawn over with its own edges in graphite. The
+// edges ride on the part, so a head that moves is still drawn where it is.
+function outline(root) {
+  const material = new THREE.LineBasicMaterial({
+    color: GRAPHITE,
+    transparent: true,
+    opacity: 0.88,
+  });
+  root.traverse((object) => {
+    if (!object.isMesh || object.userData.smooth) return;
+    const lines = new THREE.LineSegments(new THREE.EdgesGeometry(object.geometry, 22), material);
+    lines.position.set(0, 0, 0);
+    lines.rotation.set(0, 0, 0);
+    lines.scale.set(1, 1, 1);
+    object.add(lines);
+  });
+}
+
+roughen(scene);
+outline(scene);
 
 /* ---------------- the labels ---------------- */
 
@@ -632,6 +717,109 @@ function update(t) {
 
   labelSheet.style.opacity = sheet.visible ? '1' : '0';
   labelCapsule.style.opacity = capsule.visible ? '1' : '0';
+  updateStoryLine(time);
+}
+
+/* ---------------- the story line ---------------- */
+
+// The route the file takes, drawn as a single stroke that grows as the file
+// moves along it. The arrowhead is the pen: it sits at the point of the
+// stroke, so the line and the file are always the same story.
+const ROUTE_STEP = 0.05;
+const routePoints = [];
+for (let t = 0; t <= 14.2; t += ROUTE_STEP) {
+  let x;
+  let y;
+  if (t < 2.9) {
+    x = sheetX(t);
+    y = BENCH_TOP + 0.45;
+  } else if (t < 10.2) {
+    x = capsuleX(t);
+    y = capsuleY(t);
+  } else {
+    x = 56 + 12 * ease(span(t, 10.2, 10.9));
+    y = BENCH_TOP + 0.45;
+  }
+  routePoints.push(new THREE.Vector3(x, y, -3.5));
+}
+
+// A stroke in the plane of the paper, with the width across it and a hand in
+// the line.
+function strokeGeometry(points, width) {
+  const positions = [];
+  const uvs = [];
+  const indices = [];
+  let seed = 991;
+  const random = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const facing = new THREE.Vector3(0, 0, 1);
+  let side = new THREE.Vector3(0, 1, 0);
+  const last = points.length - 1;
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i];
+    const before = points[Math.max(i - 1, 0)];
+    const after = points[Math.min(i + 1, last)];
+    const tangent = after.clone().sub(before);
+    if (tangent.lengthSq() < 1e-8) tangent.set(1, 0, 0);
+    tangent.normalize();
+    const candidate = new THREE.Vector3().crossVectors(tangent, facing);
+    if (candidate.lengthSq() > 1e-6) side = candidate.normalize();
+    const half = width * (0.45 + 0.55 * (i / last));
+    const wobble = (random() - 0.5) * width * 0.55;
+    const centre = point.clone().addScaledVector(side, wobble);
+    positions.push(centre.x + side.x * half, centre.y + side.y * half, centre.z + side.z * half);
+    positions.push(centre.x - side.x * half, centre.y - side.y * half, centre.z - side.z * half);
+    uvs.push(i / last, 0, i / last, 1);
+    if (i > 0) {
+      const a = (i - 1) * 2;
+      indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+const routeGeometry = strokeGeometry(routePoints, 3.2);
+const route = new THREE.Mesh(
+  routeGeometry,
+  new THREE.MeshBasicMaterial({
+    color: GRAPHITE,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 1,
+  })
+);
+route.renderOrder = 6;
+scene.add(route);
+
+// The arrowhead: a pencil pyramid at the point of the stroke. It is drawn
+// over the scene, because the pen is never hidden behind the machine.
+const arrowhead = new THREE.Mesh(
+  new THREE.ConeGeometry(3.2, 8.4, 4),
+  new THREE.MeshBasicMaterial({ color: PALETTE.lit, depthTest: false })
+);
+arrowhead.renderOrder = 7;
+scene.add(arrowhead);
+
+const STROKE_UP = new THREE.Vector3(0, 1, 0);
+
+function updateStoryLine(time) {
+  const progress = span(time, 0, 14.2);
+  const last = routePoints.length - 1;
+  const shown = Math.floor(progress * last);
+  routeGeometry.setDrawRange(0, shown * 6);
+  const index = Math.min(Math.max(shown, 0), last - 1);
+  const point = routePoints[index];
+  const after = routePoints[Math.min(index + 1, last)];
+  const tangent = after.clone().sub(point);
+  if (tangent.lengthSq() < 1e-8) tangent.set(1, 0, 0);
+  tangent.normalize();
+  arrowhead.position.copy(point).addScaledVector(tangent, 3.6);
+  arrowhead.quaternion.setFromUnitVectors(STROKE_UP, tangent);
+  arrowhead.visible = progress > 0.002;
 }
 
 /* ---------------- the camera ---------------- */
