@@ -98,8 +98,20 @@ async function call(pathname, { method = 'GET', body, cookie } = {}) {
   assert.strictEqual(good.status, 200, `a valid token must be accepted: ${JSON.stringify(good.body)}`);
   assert.strictEqual(good.body.username, 'sugan', 'the username comes from the account address');
   assert.strictEqual(good.body.keyProvided, true, 'a new account stores the key the browser generated');
+  assert.strictEqual(good.body.requiresTotp, true, 'a Google sign-in asks for the second factor as well');
+  assert.ok(good.body.challenge, 'the sign-in waits for the code');
+  assert.ok(!good.headers.get('set-cookie'), 'no session is granted before the code');
 
-  const cookie = good.headers.get('set-cookie').split(';')[0];
+  // The code from the phone opens the session.
+  const totp = require('../server/totp.js');
+  const enrolCode = totp.codeAt(good.body.secret, Math.floor(Date.now() / 1000 / 30));
+  const opened = await call('/api/login/totp', {
+    method: 'POST',
+    body: { challenge: good.body.challenge, code: enrolCode },
+  });
+  assert.strictEqual(opened.status, 200, `the code must open the session: ${JSON.stringify(opened.body)}`);
+
+  const cookie = opened.headers.get('set-cookie').split(';')[0];
   const me = await call('/api/me', { cookie });
   assert.strictEqual(me.status, 200);
   assert.strictEqual(me.body.username, 'sugan');
@@ -110,6 +122,14 @@ async function call(pathname, { method = 'GET', body, cookie } = {}) {
   });
   assert.strictEqual(again.status, 200);
   assert.strictEqual(again.body.keyProvided, false, 'an existing account keeps the key it already published');
+  assert.strictEqual(again.body.requiresTotp, true, 'the second factor is asked for every time');
+  assert.ok(!again.body.enrol, 'the account already holds a factor');
+  assert.ok(!again.headers.get('set-cookie'), 'no session is granted before the code');
+  const wrongCode = await call('/api/login/totp', {
+    method: 'POST',
+    body: { challenge: again.body.challenge, code: '000000' },
+  });
+  assert.strictEqual(wrongCode.status, 401, 'a wrong code must not open the session');
 
   const wrongAudience = await call('/api/google-signin', {
     method: 'POST',
@@ -152,7 +172,8 @@ async function call(pathname, { method = 'GET', body, cookie } = {}) {
   assert.strictEqual(garbage.status, 401, 'a malformed token must be refused');
 
   console.log('PASS  the client id is published for the browser');
-  console.log('PASS  a valid Google token signs the user in and stores the key pair');
+  console.log('PASS  a valid Google token is accepted, and the sign-in waits for the authenticator code');
+  console.log('PASS  no session is granted before the code, and a wrong code opens nothing');
   console.log('PASS  an existing account keeps the key it already published');
   console.log('PASS  wrong audience, wrong issuer, expired, tampered, forged and malformed tokens are all refused');
 

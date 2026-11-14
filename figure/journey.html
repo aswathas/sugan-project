@@ -84,10 +84,26 @@
     display: block;
   }
   .steps i.on { background: var(--ink); }
+  .back {
+    position: absolute;
+    top: 20px;
+    left: 24px;
+    z-index: 2;
+    padding: 8px 12px;
+    border: 1px solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    text-decoration: none;
+  }
+  .back:hover { background: var(--ink); color: var(--paper); }
+  .back:active { background: var(--card); color: var(--ink); }
 </style>
 </head>
 <body>
   <div id="stage">
+    <a class="back" href="../index.html">Back to the sign in page</a>
     <div id="labels"></div>
     <div class="plate">
       <div class="readout" id="readout"></div>

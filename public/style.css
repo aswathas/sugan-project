@@ -330,6 +330,7 @@ select.input {
   background: transparent;
   color: var(--color-ink);
   font-weight: 800;
+  text-decoration: none;
   cursor: pointer;
   transition: background-color var(--dur-micro) steps(1), color var(--dur-micro) steps(1);
 }
@@ -1367,6 +1368,15 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
   margin-top: var(--space-2xl);
   padding-top: var(--space-xl);
   border-top: var(--rule-bar) solid var(--color-ink);
+}
+
+/* The call under the drawing: the button that opens the three dimensional
+   scene, and the one line that says what happens in it. */
+.auth__cta {
+  display: grid;
+  gap: var(--space-sm);
+  justify-items: start;
+  margin-top: var(--space-lg);
 }
 
 /* The explanation below the form folds into one line, so the page a person

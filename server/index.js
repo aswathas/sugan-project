@@ -245,11 +245,32 @@ async function handleApi(req, res, url) {
       save(db);
     }
 
-    const token = newToken();
-    db.sessions[token] = { username: user.username, expires: Date.now() + SESSION_TTL_MS };
+    // Google says who the person is. SecureShare asks for one thing more: the
+    // code from the authenticator app. The session waits for that code, the
+    // same way it does after a password, so every way into the workspace
+    // carries the same second factor.
+    const enrol = !user.totpSecret;
+    const secret = enrol ? totp.generateSecret() : null;
+    if (enrol) {
+      db.pendingTotp = db.pendingTotp || {};
+      db.pendingTotp[user.username] = { secret, expires: Date.now() + 10 * 60 * 1000 };
+    }
+    const challenge = newToken();
+    db.pendingLogins = db.pendingLogins || {};
+    db.pendingLogins[challenge] = { username: user.username, expires: Date.now() + 5 * 60 * 1000, tries: 0, enrol };
     save(db);
-    res.setHeader('Set-Cookie', `sid=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`);
-    return json(res, 200, { username: user.username, keyProvided });
+    if (enrol) {
+      return json(res, 200, {
+        requiresTotp: true,
+        enrol: true,
+        challenge,
+        username: user.username,
+        keyProvided,
+        secret: totp.group(secret),
+        uri: totp.uri(secret, user.username),
+      });
+    }
+    return json(res, 200, { requiresTotp: true, challenge, username: user.username, keyProvided });
   }
 
   if (route === 'POST /api/register') {
@@ -393,11 +414,6 @@ async function handleApi(req, res, url) {
       });
     }
     return json(res, 200, { requiresTotp: true, challenge });
-    const token = newToken();
-    db.sessions[token] = { username, expires: Date.now() + SESSION_TTL_MS };
-    save(db);
-    res.setHeader('Set-Cookie', `sid=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`);
-    return json(res, 200, { username });
   }
 
   if (route === 'POST /api/login/totp') {
@@ -490,32 +506,14 @@ async function handleApi(req, res, url) {
   }
 
   if (route === 'POST /api/totp/disable') {
-    const username = requireUser(req, res);
-    if (!username) return;
-    const user = db.users[username];
-    if (!user) return json(res, 404, { error: 'not found' });
-    if (!user.totpSecret) return json(res, 200, { enabled: false });
-    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
-    if (!totp.verify(user.totpSecret, body.code)) {
-      return json(res, 401, { error: 'that code is not right' });
-    }
-    delete user.totpSecret;
-    save(db);
-    logEvent('totp_disabled', username, null, null);
-    return json(res, 200, { enabled: false });
+    // The second factor is not optional, so there is nothing to turn off. The
+    // route stays, to answer an older page that still offers the button.
+    return json(res, 403, { error: 'the second factor cannot be turned off' });
   }
 
   if (route === 'POST /api/logout') {
-    // An account with a second factor proves it again before the session ends,
-    // so that a borrowed machine cannot be signed out of.
-    const username = currentUser(req);
-    const user = username ? db.users[username] : null;
-    if (user && user.totpSecret) {
-      const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
-      if (!totp.verify(user.totpSecret, body.code)) {
-        return json(res, 401, { error: 'that code is not right' });
-      }
-    }
+    // Signing out asks for nothing. Ending a session only ever takes access
+    // away, so a code here would only trap the person sitting at the machine.
     const token = parseCookies(req).sid;
     if (token) {
       delete db.sessions[token];
@@ -528,13 +526,6 @@ async function handleApi(req, res, url) {
   if (route === 'POST /api/logout-all') {
     const username = requireUser(req, res);
     if (!username) return;
-    const account = db.users[username];
-    if (account && account.totpSecret) {
-      const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
-      if (!totp.verify(account.totpSecret, body.code)) {
-        return json(res, 401, { error: 'that code is not right' });
-      }
-    }
     let ended = 0;
     for (const [token, session] of Object.entries(db.sessions)) {
       if (session.username === username) {

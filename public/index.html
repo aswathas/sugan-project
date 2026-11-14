@@ -78,27 +78,40 @@
             <p class="note">
               <button id="recovery-toggle" class="linkish" type="button">Restore my key on a new device</button>
             </p>
-            <div class="field hidden" id="login-totp-field">
-              <label class="route__label" for="login-totp-code">Authenticator code</label>
-              <input class="input" id="login-totp-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+            <button class="btn btn--primary" type="submit">Sign in</button>
+          </form>
+
+          <!-- The second factor is a step of its own. The password, or Google,
+               says who the person is; the authenticator says it is really them. -->
+          <form id="totp-form" class="hidden">
+            <div class="field">
+              <span class="route__label">Second factor</span>
               <p class="note" id="login-totp-note">
-                This account has a second factor. Enter the six digit code from your authenticator app.
+                Every account holds a second factor. Enter the six digit code from your
+                authenticator app to finish signing in.
               </p>
-              <div id="login-enrol" class="hidden">
-                <p class="note">
-                  This account has never had an authenticator, so it gets one now. Scan the code with
-                  the phone camera, then enter the six digits the phone shows.
-                </p>
-                <div class="qr-row">
-                  <div class="qr" id="login-qr"></div>
-                  <div class="qr-row__side">
-                    <p class="key-chip" id="login-secret"></p>
-                    <pre class="code-sample__pre"><code id="login-uri"></code></pre>
-                  </div>
+            </div>
+            <div id="login-enrol" class="hidden">
+              <p class="note">
+                This account has never had an authenticator, so it gets one now. Scan the code with
+                the phone camera, then enter the six digits the phone shows.
+              </p>
+              <div class="qr-row">
+                <div class="qr" id="login-qr"></div>
+                <div class="qr-row__side">
+                  <p class="key-chip" id="login-secret"></p>
+                  <pre class="code-sample__pre"><code id="login-uri"></code></pre>
                 </div>
               </div>
             </div>
-            <button class="btn btn--primary" type="submit">Sign in</button>
+            <div class="field">
+              <label class="route__label" for="login-totp-code">Authenticator code</label>
+              <input class="input" id="login-totp-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
+            </div>
+            <button class="btn btn--primary" type="submit">Verify and sign in</button>
+            <p class="note">
+              <button id="totp-back" class="linkish" type="button">Use a different account</button>
+            </p>
           </form>
 
           <form id="register-form" class="hidden">
@@ -175,9 +188,13 @@
           loading="lazy"
         ></iframe>
       </div>
-      <p class="note">
-        <a class="linkish" href="figure/journey.html">See the whole trip of one file in three dimensions</a>
-      </p>
+      <div class="auth__cta">
+        <a class="btn" href="figure/journey.html">Watch one file travel through the machine</a>
+        <p class="note">
+          The whole trip in three dimensions: the file is picked up, sealed into a capsule, and
+          handed over to the other side.
+        </p>
+      </div>
     </section>
     <details class="auth__more">
       <summary class="auth__more-summary">
@@ -644,15 +661,14 @@ const passwordWrappedKey = (await KeyGuard.wrapWithPassword(aes, password)).wrap
         </div>
         <div class="settings__actions">
           <button id="totp-confirm" class="btn btn--primary btn--small" type="button">Turn on</button>
-          <button id="totp-disable" class="btn btn--small hidden" type="button">Turn off</button>
         </div>
       </div>
 
       <div class="settings__block">
         <h4>Sessions</h4>
         <p class="note">
-          This account needs the authenticator code to sign out, so that a machine someone else is
-          sitting at cannot be signed out of.
+          Signing out ends the session on this device. Signing out everywhere ends it on every
+          device this account is signed in on.
         </p>
         <div class="settings__actions">
           <button id="logout-all" class="btn btn--small" type="button">Sign out of every device</button>
@@ -669,28 +685,6 @@ const passwordWrappedKey = (await KeyGuard.wrapWithPassword(aes, password)).wrap
     </div>
   </div>
 </div>
-<div id="signout-panel" class="preview-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="signout-title">
-  <div class="preview-panel preview-panel--small">
-    <div class="preview-panel__head">
-      <div>
-        <span class="tab">Second factor</span>
-        <h3 id="signout-title" class="preview-panel__title">Confirm with your authenticator</h3>
-      </div>
-      <button id="signout-cancel" class="btn btn--small" type="button" aria-label="Close">Close</button>
-    </div>
-    <div class="preview-panel__body">
-      <p class="note">This account has a second factor. Enter the six digit code to sign out.</p>
-      <div class="field">
-        <label class="route__label" for="signout-code">Six digit code</label>
-        <input class="input" id="signout-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
-      </div>
-    </div>
-    <div class="preview-panel__foot">
-      <button id="signout-confirm" class="btn btn--primary btn--small" type="button">Sign out</button>
-    </div>
-  </div>
-</div>
-
 <div id="shortcuts-panel" class="preview-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
   <div class="preview-panel preview-panel--small">
     <div class="preview-panel__head">

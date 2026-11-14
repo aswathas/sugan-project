@@ -270,3 +270,38 @@
   detector on the running page all pass.
 - Consequence: the file grid is even, the reading order is the DOM order, and the highest
   stakes control in the settings dialog cannot be scrolled out of reach.
+
+## D20 - The second factor becomes the second factor, on every way in
+
+- Prompt: "also set a mandatory 2 factor authentication even loggin in using google authenticator
+  not for log out idiot", and "also did you finish the 3d element keep a good button in home pge".
+- Decision: the authenticator code is now demanded on every way into the workspace, and the
+  second factor cannot be taken off. Three things followed from that. Google sign-in had been the
+  one door with no second factor: the server handed out a session the moment it believed the
+  Google token, so `/api/google-signin` now does what `/api/login` does — it holds the sign-in
+  open for a code and issues no session without one, and an account that has never held an
+  authenticator is given one there, with the secret and the address to scan. The second factor
+  moved out of the sign-in form and became a step of its own, so the password (or Google) is the
+  first step and the code is the second, with a way back to the first. The settings dialog used
+  to offer a "Turn off" button and the server honoured it; the button is gone and the route
+  answers 403, because a factor that can be removed is not a factor. Signing out asks for
+  nothing: it was the one action that demanded a code, and ending a session only ever takes
+  access away, so a code there only trapped the person at the machine. The sign-out dialog and
+  the settings copy went with it. The three dimensional scene was finished and on the home page
+  as a line of text; it is now a button that says what it opens, and the scene itself has a way
+  back to the sign-in page.
+- Alternatives considered: (a) leave the Google path as it was and call the password factor
+  mandatory, which leaves the one door that answers to a Google account with the weakest lock;
+  (b) keep the code on sign-out, which is the strongest reading of "two factor" but asks a
+  person for a code to close a door they already hold the key to; (c) the old layout: the code
+  field sat under the password field in the same form, which reads as one form and asks the
+  person to work out which step they are on.
+- Evidence: the server suite asserts that a Google token alone grants no session, that a wrong
+  code opens nothing, and that the route that would turn the factor off answers 403; the browser
+  suite plays the phone, proves the factor cannot be turned off in the page or on the server,
+  and signs out with one click and no code. The second factor step and the home page button were
+  captured at 1440x900 and read back. The live checks pass against the running server, the
+  design gate is clean and the interface detector finds nothing on the changed files.
+- Consequence: every session, by password or by Google, is held for one authenticator code;
+  an account cannot turn its factor off; signing out is one click; the second factor is a step
+  of its own instead of a field bolted to the sign-in form.

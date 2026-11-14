@@ -344,12 +344,20 @@ async function signUp(cdp, sessionId, username) {
     );
     const totp = require('../server/totp.js');
     const enrolCode = totp.codeAt(enrolSecret, Math.floor(Date.now() / 1000 / 30));
+    // The setup shows a code the phone's camera can read.
+    const enrolQr = await evaluate(
+      alice,
+      alicePage,
+      "document.querySelectorAll('#login-qr svg rect, #login-qr svg path').length"
+    );
+    assert.ok(enrolQr > 0, 'the authenticator setup must show a code the phone can scan');
+    console.log('PASS  the authenticator setup shows a code the phone can scan');
     await evaluate(
       alice,
       alicePage,
       `(() => {
         document.getElementById('login-totp-code').value = ${JSON.stringify(enrolCode)};
-        document.getElementById('login-form').requestSubmit();
+        document.getElementById('totp-form').requestSubmit();
         return true;
       })()`
     );
@@ -937,9 +945,8 @@ async function signUp(cdp, sessionId, username) {
     );
     console.log('PASS  a file that arrives is announced');
 
-    // The second factor is on, because every sign-in demands one. It can be
-    // turned off and set up again from the settings dialog, and the code the
-    // phone reads is drawn there.
+    // The second factor is on, because every sign-in demands one. It is not a
+    // switch: the settings offer no way to remove it, and the server refuses.
     await evaluate(alice, alicePage, "document.getElementById('settings-open').click()");
     await waitFor(
       alice,
@@ -950,98 +957,41 @@ async function signUp(cdp, sessionId, username) {
     await waitFor(
       alice,
       alicePage,
-      "!document.getElementById('totp-disable').classList.contains('hidden')",
+      "document.getElementById('totp-state').textContent.includes('always asks')",
       'the factor is on'
     );
-
-    // off, with the code the phone would show
-    const offCode = totp.codeAt(enrolSecret, Math.floor(Date.now() / 1000 / 30));
-    await evaluate(
+    const noSwitch = await evaluate(
       alice,
       alicePage,
-      `(() => {
-        document.getElementById('totp-code').value = ${JSON.stringify(offCode)};
-        document.getElementById('totp-disable').click();
-        return true;
-      })()`
+      "document.getElementById('totp-disable') === null"
     );
-    await waitFor(
+    assert.ok(noSwitch, 'the settings must not offer a switch to turn the second factor off');
+    const refused = await evaluate(
       alice,
       alicePage,
-      "[...document.querySelectorAll('#toasts .toast')].some((t) => t.textContent.includes('second factor'))",
-      'the factor turns off'
+      "fetch('/api/totp/disable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: '000000' }) }).then((r) => r.status)"
     );
-
-    // and on again, from the same dialog
-    await evaluate(alice, alicePage, "document.getElementById('settings-open').click()");
-    await waitFor(
-      alice,
-      alicePage,
-      "document.getElementById('totp-secret').textContent.trim().length > 10",
-      'the setup shows the secret'
-    );
-    const secret = await evaluate(
-      alice,
-      alicePage,
-      "document.getElementById('totp-secret').textContent.trim()"
-    );
-    const code = totp.codeAt(secret, Math.floor(Date.now() / 1000 / 30));
-    await evaluate(
-      alice,
-      alicePage,
-      `(() => {
-        document.getElementById('totp-code').value = ${JSON.stringify(code)};
-        document.getElementById('totp-confirm').click();
-        return true;
-      })()`
-    );
-    await waitFor(
-      alice,
-      alicePage,
-      "[...document.querySelectorAll('#toasts .toast')].some((t) => t.textContent.includes('second factor'))",
-      'the factor turns on'
-    );
+    assert.strictEqual(refused, 403, 'the server must refuse to turn the second factor off');
     const factorOn = await evaluate(
       alice,
       alicePage,
       "(async () => (await (await fetch('/api/totp')).json()).enabled)()"
     );
     assert.strictEqual(factorOn, true, 'the account must ask for a code after this');
-    console.log('PASS  the second factor is turned off and on again from the settings dialog');
+    console.log('PASS  the second factor is on and cannot be turned off');
 
-    // The setup shows a code the phone's camera can read.
-    const qr = await evaluate(
-      alice,
-      alicePage,
-      "document.querySelectorAll('#totp-qr svg rect, #totp-qr svg path').length"
-    );
-    assert.ok(qr > 0, 'the setup must show a scannable code');
-    console.log('PASS  the authenticator setup shows a code the phone can scan');
-
-    // Signing out asks for the code as well, because the account has a factor.
-    await evaluate(alice, alicePage, "document.getElementById('logout').click()");
+    // Signing out asks for nothing. The session ends on one click, and the
+    // sign in page comes back.
+    await evaluate(bob, bobPage, "document.getElementById('logout').click()");
     await waitFor(
-      alice,
-      alicePage,
-      "!document.getElementById('signout-panel').classList.contains('hidden')",
-      'the sign out panel asks for the code'
+      bob,
+      bobPage,
+      "!document.getElementById('auth').classList.contains('hidden')",
+      'the sign in page is back after signing out'
     );
-    await evaluate(
-      alice,
-      alicePage,
-      `(() => {
-        document.getElementById('signout-code').value = '000000';
-        document.getElementById('signout-confirm').click();
-        return true;
-      })()`
-    );
-    await waitFor(
-      alice,
-      alicePage,
-      "document.getElementById('main-status').textContent.includes('not right')",
-      'a wrong code does not end the session'
-    );
-    console.log('PASS  signing out asks for the authenticator code');
+    const signedOut = await evaluate(bob, bobPage, "fetch('/api/me').then((r) => r.status)");
+    assert.strictEqual(signedOut, 401, 'the session must be gone after signing out');
+    console.log('PASS  signing out needs no code, and the session ends');
 
     // A reload must not cost a sign-in: the session cookie lasts a week.
     await alice.send('Page.navigate', { url: SITE }, alicePage);

@@ -452,12 +452,22 @@ async function verify(username, code) {
     cookie: withCode.headers.get('set-cookie').split(';')[0],
     body: { code: totp.codeAt(enrolSecret, step()) },
   });
-  assert.strictEqual(off.body.enabled, false, 'the factor must be able to be turned off');
+  assert.strictEqual(off.status, 403, 'the second factor must not be turnable off');
+  const stillOn = await call('/api/totp', {
+    cookie: withCode.headers.get('set-cookie').split(';')[0],
+  });
+  assert.strictEqual(stillOn.body.enabled, true, 'the account keeps its second factor');
   const passwordAgain = await call('/api/login', {
     method: 'POST',
     body: { username: 'alice', password: 'correct-horse' },
   });
-  assert.ok(passwordAgain.body.requiresTotp, 'without the factor the account must enrol again');
+  assert.ok(passwordAgain.body.requiresTotp, 'every sign-in asks for the code');
+  assert.ok(!passwordAgain.body.enrol, 'the account already holds a factor');
+  const signOut = await call('/api/logout', {
+    method: 'POST',
+    cookie: withCode.headers.get('set-cookie').split(';')[0],
+  });
+  assert.strictEqual(signOut.status, 200, 'signing out must not ask for the code');
 
   console.log('PASS  register + email one-time code verification');
   console.log('PASS  unverified account cannot sign in, wrong code rejected');
@@ -498,7 +508,10 @@ async function verify(username, code) {
     body: { username: 'alice', password: 'correct-horse' },
   });
   assert.strictEqual(freshLogin.body.requiresTotp, true, 'every sign-in wants the second factor');
-  const againSecret = freshLogin.body.secret;
+  // The account holds a factor now, so the sign-in asks for the code instead of
+  // handing out a new secret.
+  assert.strictEqual(freshLogin.body.enrol, undefined, 'an account with a factor is not given another');
+  const againSecret = enrolSecret;
   const again = await call('/api/login/totp', {
     method: 'POST',
     body: { challenge: freshLogin.body.challenge, code: totp.codeAt(againSecret, step()) },

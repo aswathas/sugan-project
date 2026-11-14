@@ -61,8 +61,6 @@ let filterBy = 'all';
 let sortBy = 'newest';
 let layout = readStored(LAYOUT_KEY) === 'list' ? 'list' : 'grid';
 let shares = { inbox: [], sent: [], starred: [], trashed: [] };
-let totpEnabled = false;
-let pendingEnrol = false;
 let visibleFiles = [];
 let activeCardId = null;
 let draggedShareId = null;
@@ -223,29 +221,34 @@ function showApp() {
   $('who').textContent = me;
 }
 
+// The second factor is a step of its own. The password, or Google, says who
+// the person is; the authenticator says it is really them. An account that has
+// never had an authenticator is given one here, so the step always ends in a
+// working code.
+function askForTotp(session) {
+  pendingChallenge = session.challenge;
+  $('login-form').classList.add('hidden');
+  $('totp-form').classList.remove('hidden');
+  $('login-totp-code').value = '';
+  if (session.enrol) {
+    $('login-enrol').classList.remove('hidden');
+    $('login-secret').textContent = session.secret;
+    $('login-uri').textContent = session.uri;
+    $('login-qr').innerHTML = qrFor(session.uri);
+    $('login-totp-note').textContent =
+      'This account has never had an authenticator, so it gets one now. Scan the code with your phone, then enter the six digits it shows.';
+  } else {
+    $('login-enrol').classList.add('hidden');
+    $('login-totp-note').textContent =
+      'This account has a second factor. Enter the six digit code from your authenticator app.';
+  }
+  $('login-totp-code').focus();
+}
+
 async function signIn(username, password) {
   const session = await api('/api/login', { method: 'POST', body: { username, password } });
   if (session.requiresTotp) {
-    // The password was right, but every account has a second factor. The
-    // session waits for the code. An account that has never had one is shown
-    // the code to scan, because it gets its authenticator now.
-    pendingChallenge = session.challenge;
-    pendingEnrol = Boolean(session.enrol);
-    $('login-totp-field').classList.remove('hidden');
-    $('login-totp-code').value = '';
-    if (session.enrol) {
-      $('login-enrol').classList.remove('hidden');
-      $('login-secret').textContent = session.secret;
-      $('login-uri').textContent = session.uri;
-      $('login-qr').innerHTML = qrFor(session.uri);
-      $('login-totp-note').textContent =
-        'Scan the code with your phone, then enter the six digits it shows.';
-    } else {
-      $('login-enrol').classList.add('hidden');
-      $('login-totp-note').textContent =
-        'This account has a second factor. Enter the six digit code from your authenticator app.';
-    }
-    $('login-totp-code').focus();
+    askForTotp(session);
     return;
   }
   await completeSignIn(session.username);
@@ -253,12 +256,12 @@ async function signIn(username, password) {
 
 async function completeSignIn(username) {
   pendingChallenge = null;
-  $('login-totp-field').classList.add('hidden');
+  $('totp-form').classList.add('hidden');
+  $('login-form').classList.remove('hidden');
   me = username;
   myKeys = (await idbGet(me)) || null;
   await recoverKeyIfAsked(username);
   showApp();
-  totpEnabled = (await api('/api/totp')).enabled;
   await refresh();
   await uploadBackup();
   if (!myKeys) {
@@ -281,11 +284,6 @@ async function restoreSession() {
   me = session.username;
   myKeys = (await idbGet(me)) || null;
   showApp();
-  try {
-    totpEnabled = (await api('/api/totp')).enabled;
-  } catch {
-    totpEnabled = false;
-  }
   await refresh();
   if (!myKeys) {
     $('recovery-field').classList.remove('hidden');
@@ -330,15 +328,13 @@ async function openSettings() {
     if (state.enabled) {
       $('totp-setup').classList.add('hidden');
       $('totp-state').textContent =
-        'This account needs a six digit code from your authenticator app as well as the password.';
+        'On. This account always asks for a six digit code from your authenticator app as well as the password.';
       $('totp-confirm').classList.add('hidden');
-      $('totp-disable').classList.remove('hidden');
     } else {
       $('totp-setup').classList.remove('hidden');
       $('totp-state').textContent =
-        'Turn on a second factor and this account will need the authenticator app and the password to sign in.';
+        'Not on yet. Turn it on and this account will need the authenticator app and the password to sign in.';
       $('totp-confirm').classList.remove('hidden');
-      $('totp-disable').classList.add('hidden');
       const setup = await api('/api/totp/enroll', { method: 'POST' });
       $('totp-secret').textContent = setup.secret;
       $('totp-uri').textContent = setup.uri;
@@ -359,19 +355,7 @@ function closeTotpPanel() {
 async function confirmTotp() {
   try {
     await api('/api/totp/confirm', { method: 'POST', body: { code: $('totp-code').value.trim() } });
-    totpEnabled = true;
     toast('The second factor is on. The next sign-in asks for a code.');
-    closeTotpPanel();
-  } catch (err) {
-    $('totp-state').textContent = err.message;
-  }
-}
-
-async function disableTotp() {
-  try {
-    await api('/api/totp/disable', { method: 'POST', body: { code: $('totp-code').value.trim() } });
-    totpEnabled = false;
-    toast('The second factor is off.');
     closeTotpPanel();
   } catch (err) {
     $('totp-state').textContent = err.message;
@@ -506,6 +490,12 @@ async function onGoogleCredential(response) {
         phrase,
         backup,
       });
+    }
+    // Google proves the address; the authenticator proves the person. The
+    // session waits for the code, the same as it does after a password.
+    if (result.requiresTotp) {
+      askForTotp(result);
+      return;
     }
     myKeys = (await idbGet(me)) || null;
     showApp();
@@ -2071,22 +2061,33 @@ function bindEvents() {
     event.preventDefault();
     $('auth-error').textContent = '';
     try {
-      if (pendingChallenge) {
-        const result = await api('/api/login/totp', {
-          method: 'POST',
-          body: {
-            challenge: pendingChallenge,
-            code: $('login-totp-code').value.trim(),
-            enrol: pendingEnrol,
-          },
-        });
-        await completeSignIn(result.username);
-      } else {
-        await signIn($('login-username').value.trim(), $('login-password').value);
-      }
+      await signIn($('login-username').value.trim(), $('login-password').value);
     } catch (err) {
       $('auth-error').textContent = err.message;
     }
+  });
+
+  // The second factor step. The server knows from the challenge whether the
+  // code opens an account that already has a factor or sets the first one.
+  $('totp-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    $('auth-error').textContent = '';
+    try {
+      const result = await api('/api/login/totp', {
+        method: 'POST',
+        body: { challenge: pendingChallenge, code: $('login-totp-code').value.trim() },
+      });
+      await completeSignIn(result.username);
+    } catch (err) {
+      $('auth-error').textContent = err.message;
+    }
+  });
+
+  $('totp-back').addEventListener('click', () => {
+    pendingChallenge = null;
+    $('totp-form').classList.add('hidden');
+    $('login-form').classList.remove('hidden');
+    $('login-username').focus();
   });
 
   $('register-form').addEventListener('submit', async (event) => {
@@ -2211,13 +2212,12 @@ function bindEvents() {
     });
   }
 
-  // Signing out asks for the authenticator code when the account has a second
-  // factor, so that a machine someone else is sitting at cannot be signed out.
+  // Signing out asks for nothing. Ending a session only ever takes access
+  // away, so a code here would only trap the person sitting at the machine.
   let signOutEverywhere = false;
-  const endSession = async (code) => {
+  const endSession = async () => {
     const result = await api(signOutEverywhere ? '/api/logout-all' : '/api/logout', {
       method: 'POST',
-      body: code ? { code } : {},
     });
     if (signOutEverywhere) {
       setMainStatus(`Signed out of ${result.ended} session(s) on every device.`, 'ok');
@@ -2227,43 +2227,22 @@ function bindEvents() {
     }
   };
 
-  const askToSignOut = async (everywhere) => {
+  const signOut = async (everywhere) => {
     signOutEverywhere = everywhere;
-    if (!totpEnabled) {
-      try {
-        await endSession(null);
-      } catch (err) {
-        setMainStatus(err.message, 'error');
-      }
-      return;
-    }
-    $('signout-code').value = '';
-    $('signout-panel').classList.remove('hidden');
-    $('signout-code').focus();
-  };
-
-  $('signout-cancel').addEventListener('click', () => {
-    $('signout-panel').classList.add('hidden');
-  });
-  $('signout-panel').addEventListener('click', (event) => {
-    if (event.target === $('signout-panel')) $('signout-panel').classList.add('hidden');
-  });
-  $('signout-confirm').addEventListener('click', async () => {
     try {
-      $('signout-panel').classList.add('hidden');
-      await endSession($('signout-code').value.trim());
+      await endSession();
     } catch (err) {
       setMainStatus(err.message, 'error');
     }
-  });
+  };
 
   $('logout').addEventListener('click', () => {
     closeTotpPanel();
-    askToSignOut(false);
+    signOut(false);
   });
   $('logout-all').addEventListener('click', () => {
     closeTotpPanel();
-    askToSignOut(true);
+    signOut(true);
   });
 
   for (const cell of document.querySelectorAll('[data-permission]')) {
@@ -2391,7 +2370,6 @@ function bindEvents() {
         : 'Switch to dark theme';
   });
   $('totp-confirm').addEventListener('click', confirmTotp);
-  $('totp-disable').addEventListener('click', disableTotp);
 
   $('file').addEventListener('change', (event) => describeFile(event.target.files[0]));
 
