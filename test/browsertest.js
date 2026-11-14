@@ -227,6 +227,13 @@ async function signUp(cdp, sessionId, username) {
       `!!document.getElementById('recipient').querySelector('option[value="bob"]')`,
       'bob in alice recipient list'
     );
+    await evaluate(alice, alicePage, "document.getElementById('new-share').click()");
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('new-form').classList.contains('hidden')",
+      'send panel opens'
+    );
     await shoot(alice, alicePage, '02-share-panel.png');
     const uploadPath = path.join(DATA_DIR, 'syllabus.pdf');
     fs.writeFileSync(uploadPath, `%PDF-1.4 ${MARKER}`);
@@ -252,6 +259,25 @@ async function signUp(cdp, sessionId, username) {
       'alice send confirmation'
     );
     await shoot(alice, alicePage, '03-sent.png');
+
+    // The dashboard and the evidence panel: the sender sees her own file's first
+    // bytes next to the bytes the server really holds.
+    const evidence = await evaluate(
+      alice,
+      alicePage,
+      `(() => ({
+        sent: document.getElementById('count-sent').textContent,
+        original: document.getElementById('evidence-original').textContent.trim(),
+        stored: document.getElementById('evidence-stored').textContent.trim(),
+        foot: document.getElementById('evidence-foot').textContent.trim(),
+      }))()`
+    );
+    assert.strictEqual(evidence.sent, '1', 'the dashboard counts the share that was sent');
+    assert.ok(evidence.original.startsWith('25 50 44 46'), 'the original file starts with the PDF signature');
+    assert.ok(/^[0-9a-f ]{32,}$/.test(evidence.stored), 'the stored bytes are shown as hex');
+    assert.ok(!evidence.original.replace(/ /g, '').startsWith(evidence.stored.replace(/ /g, '')), 'the stored bytes are not the original bytes');
+    assert.ok(evidence.foot.includes('data/blobs/'), 'the panel says where the file lives on disk');
+    console.log('PASS  the dashboard counts the share and the evidence panel shows different bytes');
     console.log('PASS  file encrypted in the browser and sent to bob');
 
     // The server holds ciphertext only.
@@ -264,7 +290,20 @@ async function signUp(cdp, sessionId, username) {
 
     // Bob receives and decrypts.
     await evaluate(bob, bobPage, 'refresh()');
-    await waitFor(bob, bobPage, "document.querySelectorAll('#inbox li').length === 1", 'bob sees one file');
+    await waitFor(bob, bobPage, "document.querySelectorAll('#cards .card-file').length === 1", 'bob sees one file');
+    const bobStats = await evaluate(
+      bob,
+      bobPage,
+      `(() => ({
+        inbox: document.getElementById('count-inbox').textContent,
+        unread: document.querySelectorAll('.card-file--unread').length,
+        title: document.getElementById('view-title').textContent,
+      }))()`
+    );
+    assert.strictEqual(bobStats.inbox, '1', 'the recipient dashboard counts the incoming share');
+    assert.strictEqual(bobStats.unread, 1, 'an unopened share is marked unread');
+    assert.strictEqual(bobStats.title, 'Shared with me', 'the recipient lands on the inbox view');
+    console.log('PASS  the recipient dashboard shows the incoming share as unread');
     await shoot(bob, bobPage, '04-inbox.png');
     await evaluate(
       bob,
@@ -273,7 +312,7 @@ async function signUp(cdp, sessionId, username) {
         window.__captured = null;
         const original = URL.createObjectURL.bind(URL);
         URL.createObjectURL = (blob) => { window.__captured = blob; return original(blob); };
-        document.querySelector('#inbox li button').click();
+        document.querySelector('#cards .card-file__foot button').click();
         return true;
       })()`
     );

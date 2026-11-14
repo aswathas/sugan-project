@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { load, save, writeBlob, readBlob } = require('./store');
 const { hashPassword, verifyPassword, newToken } = require('./crypto');
 const { deliverOtp } = require('./mailer');
+const { verifyGoogleIdToken } = require('./google');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -82,11 +83,87 @@ function requireUser(req, res) {
   return username;
 }
 
+// A Google account gets a username derived from its address, kept unique.
+function uniqueUsernameFor(payload) {
+  const base =
+    String(payload.email || payload.sub || 'user')
+      .split('@')[0]
+      .toLowerCase()
+      .replace(/[^a-z0-9_.-]/g, '')
+      .slice(0, 24) || 'user';
+  let username = base;
+  let counter = 1;
+  while (db.users[username]) {
+    username = `${base}-${counter}`;
+    counter += 1;
+  }
+  return username;
+}
+
 async function handleApi(req, res, url) {
   const route = `${req.method} ${url.pathname}`;
 
+  if (route === 'GET /api/config') {
+    // Public configuration the browser needs. Nothing secret is exposed here:
+    // the client id is public by design, and the client secret never leaves the server.
+    return json(res, 200, {
+      googleClientId: process.env.GOOGLE_CLIENT_ID || null,
+      requireAccessCode: Boolean(process.env.ACCESS_CODE),
+    });
+  }
+
+  if (route === 'POST /api/google-signin') {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      return json(res, 503, { error: 'Google sign-in is not configured on this server' });
+    }
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    let payload;
+    try {
+      payload = await verifyGoogleIdToken(body.idToken, clientId);
+    } catch (err) {
+      return json(res, 401, { error: `Google sign-in failed: ${err.message}` });
+    }
+
+    let user = Object.values(db.users).find((u) => u.googleSub === payload.sub);
+    let keyProvided = false;
+    if (!user) {
+      if (typeof body.publicKey !== 'string' || body.publicKey.length < 32) {
+        return json(res, 400, { error: 'publicKey missing' });
+      }
+      user = {
+        username: uniqueUsernameFor(payload),
+        email: payload.email || `${payload.sub}@google`,
+        googleSub: payload.sub,
+        publicKey: body.publicKey,
+        verified: true,
+        createdAt: Date.now(),
+      };
+      db.users[user.username] = user;
+      keyProvided = true;
+      save(db);
+    }
+
+    const token = newToken();
+    db.sessions[token] = { username: user.username, expires: Date.now() + SESSION_TTL_MS };
+    save(db);
+    res.setHeader('Set-Cookie', `sid=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`);
+    return json(res, 200, { username: user.username, keyProvided });
+  }
+
   if (route === 'POST /api/register') {
-    const { username, email, password, publicKey } = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const { username, email, password, publicKey } = body;
+    // A public deployment should not accept registrations from strangers. The
+    // check comes first so a stranger cannot even learn which usernames exist.
+    if (process.env.ACCESS_CODE) {
+      const expected = Buffer.from(process.env.ACCESS_CODE);
+      const given = Buffer.from(String(body.accessCode || ''));
+      const ok = expected.length === given.length && crypto.timingSafeEqual(expected, given);
+      if (!ok) {
+        return json(res, 403, { error: 'the access code for this demo is not correct' });
+      }
+    }
     if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(username || '')) {
       return json(res, 400, { error: 'username must be 3-32 letters, digits, dot, dash or underscore' });
     }
@@ -258,6 +335,27 @@ async function handleApi(req, res, url) {
       iv: share.iv,
       wrappedKey: share.wrappedKey,
       createdAt: share.createdAt,
+    });
+  }
+
+  const headMatch = url.pathname.match(/^\/api\/shares\/([^/]+)\/cipher-head$/);
+  if (req.method === 'GET' && headMatch) {
+    const username = requireUser(req, res);
+    if (!username) return;
+    const share = db.shares[headMatch[1]];
+    if (!share) return json(res, 404, { error: 'not found' });
+    if (share.from !== username && share.to !== username) {
+      return json(res, 403, { error: 'not your share' });
+    }
+    const blob = readBlob(share.id);
+    if (!blob) return json(res, 404, { error: 'blob missing' });
+    const head = blob.subarray(0, 32);
+    return json(res, 200, {
+      size: blob.length,
+      head: head.toString('hex'),
+      // The same bytes as text, with anything unprintable shown as a dot, so the
+      // professor can see that the stored file is not readable.
+      readable: head.toString('utf8').replace(/[^\x20-\x7e]/g, '.'),
     });
   }
 
