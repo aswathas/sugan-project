@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SecureShare — end-to-end encrypted file sharing</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="lock">🔒</span>
+    <div>
+      <h1>SecureShare</h1>
+      <p class="tag">End-to-end encrypted file sharing — the server never sees your files</p>
+    </div>
+  </div>
+  <div id="session" class="session hidden">
+    <span id="who"></span>
+    <button id="logout" class="ghost">Sign out</button>
+  </div>
+</header>
+
+<main>
+  <!-- AUTH -->
+  <section id="auth" class="card">
+    <div class="tabs">
+      <button id="tab-login" class="tab active">Sign in</button>
+      <button id="tab-register" class="tab">Register</button>
+    </div>
+
+    <form id="login-form">
+      <label>Username <input id="login-username" autocomplete="username" required></label>
+      <label>Password <input id="login-password" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Sign in</button>
+    </form>
+
+    <form id="register-form" class="hidden">
+      <label>Username <input id="register-username" autocomplete="username" required></label>
+      <label>Password <input id="register-password" type="password" autocomplete="new-password" minlength="6" required></label>
+      <p class="note">
+        Your key pair is generated <strong>in this browser</strong> when you register. The private key is
+        stored on this device only and never sent to the server.
+      </p>
+      <button type="submit">Create account &amp; generate keys</button>
+    </form>
+
+    <p id="auth-error" class="error"></p>
+  </section>
+
+  <!-- APP -->
+  <section id="app" class="hidden">
+    <div class="grid">
+      <div class="card">
+        <h2>Share a file</h2>
+        <label>File <input id="file" type="file"></label>
+        <label>Recipient
+          <select id="recipient"></select>
+        </label>
+        <p id="recipient-key" class="note"></p>
+        <button id="share">Encrypt in browser &amp; send</button>
+        <p id="share-status" class="status"></p>
+      </div>
+
+      <div class="card">
+        <h2>Shared with me</h2>
+        <ul id="inbox" class="files"></ul>
+      </div>
+
+      <div class="card">
+        <h2>Sent by me</h2>
+        <ul id="sent" class="files"></ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
