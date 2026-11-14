@@ -1,6 +1,6 @@
 # Secure File Sharing System Using End-to-End Encryption and Access Control
 
-Course: 21ECC402P — Computer Communication and Network Security
+Course: 21ECC402P, Computer Communication and Network Security
 
 Project team: Pradeesh M (RA2311004010278), Varun P R (RA2311004010287), Sugandhan A (RA2311004010297)
 

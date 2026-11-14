@@ -15,6 +15,9 @@ const { spawn } = require('node:child_process');
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sugan-browsertest-'));
 process.env.DATA_DIR = DATA_DIR;
 process.env.PORT = '0';
+// A client id of the right shape, so the page takes the Google path. The button
+// is rendered by Google, so only our own wiring is asserted here.
+process.env.GOOGLE_CLIENT_ID = '000000000000-testclient.apps.googleusercontent.com';
 
 const CHROME_CANDIDATES = [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -206,6 +209,20 @@ async function signUp(cdp, sessionId, username) {
     await signUp(alice, alicePage, 'alice');
     await signUp(bob, bobPage, 'bob');
     console.log('PASS  two users registered in two separate browser profiles');
+
+    // The Google button appears because the server publishes the client id.
+    const google = await evaluate(
+      alice,
+      alicePage,
+      `(() => ({
+        shown: !document.getElementById('google-block').classList.contains('hidden'),
+        script: !!document.querySelector('script[src*="accounts.google.com/gsi/client"]'),
+        accessCode: !document.getElementById('register-access').classList.contains('hidden'),
+      }))()`
+    );
+    assert.ok(google.shown, 'the Google sign-in block must be shown when a client id is configured');
+    assert.ok(google.script, 'the Google Identity script must be loaded');
+    console.log('PASS  the Google sign-in button is wired to the client id the server publishes');
 
     // Alice's private key is on her device only.
     const aliceKey = await evaluate(
