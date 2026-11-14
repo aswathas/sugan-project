@@ -131,6 +131,18 @@ function uniqueUsernameFor(payload) {
   return username;
 }
 
+// The secret the phone is being asked to scan. The same one is handed back for
+// ten minutes: a second click, a reload or a retried sign-in must not orphan
+// the entry the phone has already scanned.
+function pendingTotpSecret(username) {
+  db.pendingTotp = db.pendingTotp || {};
+  const current = db.pendingTotp[username];
+  if (current && current.expires > Date.now()) return current.secret;
+  const secret = totp.generateSecret();
+  db.pendingTotp[username] = { secret, expires: Date.now() + 10 * 60 * 1000 };
+  return secret;
+}
+
 // The audit trail. Every event names the share it belongs to, so the activity
 // feed can be filtered per user without ever showing a share of somebody else.
 // The entries are chained by server/trail.js, so an entry that is edited or
@@ -250,11 +262,7 @@ async function handleApi(req, res, url) {
     // same way it does after a password, so every way into the workspace
     // carries the same second factor.
     const enrol = !user.totpSecret;
-    const secret = enrol ? totp.generateSecret() : null;
-    if (enrol) {
-      db.pendingTotp = db.pendingTotp || {};
-      db.pendingTotp[user.username] = { secret, expires: Date.now() + 10 * 60 * 1000 };
-    }
+    const secret = enrol ? pendingTotpSecret(user.username) : null;
     const challenge = newToken();
     db.pendingLogins = db.pendingLogins || {};
     db.pendingLogins[challenge] = { username: user.username, expires: Date.now() + 5 * 60 * 1000, tries: 0, enrol };
@@ -395,11 +403,7 @@ async function handleApi(req, res, url) {
     // one now: the secret is shown once, and the account can only be opened
     // once the phone has proved it holds that secret.
     const enrol = !user.totpSecret;
-    const secret = enrol ? totp.generateSecret() : null;
-    if (enrol) {
-      db.pendingTotp = db.pendingTotp || {};
-      db.pendingTotp[username] = { secret, expires: Date.now() + 10 * 60 * 1000 };
-    }
+    const secret = enrol ? pendingTotpSecret(username) : null;
     const challenge = newToken();
     db.pendingLogins = db.pendingLogins || {};
     db.pendingLogins[challenge] = { username, expires: Date.now() + 5 * 60 * 1000, tries: 0, enrol };
@@ -474,9 +478,7 @@ async function handleApi(req, res, url) {
     if (!username) return;
     const user = db.users[username];
     if (!user) return json(res, 404, { error: 'not found' });
-    const secret = totp.generateSecret();
-    db.pendingTotp = db.pendingTotp || {};
-    db.pendingTotp[username] = { secret, expires: Date.now() + 10 * 60 * 1000 };
+    const secret = pendingTotpSecret(username);
     save(db);
     // The secret is shown once, here, and is kept until the account confirms
     // it with a code. It is not live until then.

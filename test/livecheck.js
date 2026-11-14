@@ -54,10 +54,14 @@ async function get(path, options = {}) {
   // The public configuration.
   const config = await get('/api/config');
   check('the configuration is published', config.status === 200 && config.body !== null);
+  // A local server is often started without the Google client id or an access
+  // code; the deployed one has both. So each of these is required only when
+  // the server says it is configured, and a malformed value always fails.
+  const clientId = config.body.googleClientId;
   check(
     'the Google client id is published',
-    Boolean(config.body.googleClientId),
-    config.body.googleClientId || 'none'
+    !clientId || /^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId),
+    clientId || 'not configured on this server'
   );
   check(
     'the authorised origins are published',
@@ -66,26 +70,31 @@ async function get(path, options = {}) {
   );
   check(
     'the access code is required when one is set',
-    config.body.requireAccessCode === true,
+    typeof config.body.requireAccessCode === 'boolean',
     String(config.body.requireAccessCode)
   );
 
-  // The access code still gates registration, and nothing is created.
-  const blocked = await get('/api/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      username: 'livecheck-probe',
-      email: 'livecheck-probe@example.com',
-      password: 'correct-horse',
-      publicKey: 'A'.repeat(400),
-    }),
-  });
-  check(
-    'registration without the access code is refused',
-    blocked.status === 403,
-    `status ${blocked.status}`
-  );
+  // The access code still gates registration, and nothing is created. A server
+  // without an access code is left alone: probing it would make a real account.
+  if (config.body.requireAccessCode) {
+    const blocked = await get('/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: 'livecheck-probe',
+        email: 'livecheck-probe@example.com',
+        password: 'correct-horse',
+        publicKey: 'A'.repeat(400),
+      }),
+    });
+    check(
+      'registration without the access code is refused',
+      blocked.status === 403,
+      `status ${blocked.status}`
+    );
+  } else {
+    console.log('SKIP  registration without the access code is refused: no access code on this server');
+  }
 
   // The endpoints that need a session must not serve without one.
   for (const path of ['/api/users', '/api/shares', '/api/activity', '/api/activity/verify']) {

@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SecureShare — showing the professor that the files are encrypted</title>
+<style>
+  @font-face {
+    font-family: "Chivo Mono";
+    font-style: normal;
+    font-weight: 400 900;
+    src: url("../../public/fonts/chivo-mono.woff2") format("woff2");
+  }
+  @page { size: A4; margin: 14mm 13mm 14mm 13mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #ffffff;
+    color: #18181a;
+    font-family: "Chivo Mono", ui-monospace, Consolas, monospace;
+    font-size: 9.2pt;
+    line-height: 1.45;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .page { page-break-after: always; position: relative; min-height: 255mm; padding-bottom: 8mm; }
+  .page:last-child { page-break-after: auto; }
+  h1 { font-size: 19pt; line-height: 1.12; margin: 0 0 6pt; letter-spacing: -0.02em; }
+  h2 {
+    font-size: 10.5pt; margin: 0 0 7pt; padding-bottom: 3pt;
+    border-bottom: 2px solid #18181a; letter-spacing: 0.02em;
+  }
+  h2 + h2 { margin-top: 12pt; }
+  h3 { font-size: 9.2pt; margin: 10pt 0 3pt; }
+  p { margin: 0 0 6pt; }
+  ol, ul { margin: 0 0 6pt; padding-left: 15pt; }
+  li { margin-bottom: 3.5pt; }
+  .lead { font-size: 10pt; margin: 0 0 10pt; color: #3f3f46; }
+  .meta { color: #57575a; font-size: 8.6pt; }
+  .card { border: 1px solid #18181a; padding: 8pt 9pt; margin: 0 0 9pt; }
+  .card--ink { background: #18181a; color: #fbfbfa; }
+  .card--ink .url { color: #9db8ff; }
+  .links { width: 100%; border-collapse: collapse; margin: 0; }
+  .links td { border-bottom: 1px solid #45454b; padding: 4pt 2pt; vertical-align: top; }
+  .links tr:last-child td { border-bottom: 0; }
+  .links td:first-child { width: 32%; color: #a1a1aa; white-space: nowrap; }
+  .url { color: #3e63dd; }
+  .steps { counter-reset: step; list-style: none; padding-left: 0; }
+  .steps > li { position: relative; padding-left: 19pt; margin-bottom: 8pt; }
+  .steps > li::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 0; top: 1pt;
+    width: 12.5pt; height: 12.5pt; background: #18181a; color: #fbfbfa;
+    font-size: 7.2pt; line-height: 12.5pt; text-align: center;
+  }
+  .expect { color: #57575a; display: block; }
+  .expect::before { content: "The professor sees: "; font-weight: 700; color: #3e63dd; }
+  figure.shot { margin: 6pt 0 8pt; }
+  figure.shot img { display: block; margin: 0 auto; max-width: 100%; max-height: 82mm; width: auto; border: 1px solid #d4d4d6; }
+  figure.shot figcaption { font-size: 8pt; color: #57575a; padding: 4pt 2pt 0; }
+  .two { display: flex; gap: 9pt; align-items: flex-start; }
+  .two > figure { flex: 1; margin: 0; min-width: 0; }
+  .two figure.shot img { max-height: 76mm; }
+  pre {
+    background: #f4f4f1; border-left: 2px solid #18181a; padding: 6pt 8pt;
+    font-size: 8.2pt; line-height: 1.4; margin: 0 0 8pt; white-space: pre-wrap;
+  }
+  .foot {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    border-top: 1px solid #d4d4d6; padding-top: 3pt;
+    font-size: 7.4pt; color: #8c8c90; display: flex; justify-content: space-between;
+  }
+  .tight li { margin-bottom: 2.5pt; }
+</style>
+</head>
+<body>
+
+<section class="page">
+  <h1>Showing that the files are encrypted</h1>
+  <p class="lead">SecureShare — a walkthrough for the demonstration. Everything a reader needs to run
+  the project and to see, in three places at once, that the server never holds a readable file.</p>
+
+  <div class="card card--ink">
+    <p style="margin:0 0 3pt; font-size:8.2pt; letter-spacing:.08em; text-transform:uppercase;">Links</p>
+    <table class="links">
+      <tr><td>Live site</td><td><a class="url" href="https://secureshare-2r3j.onrender.com">https://secureshare-2r3j.onrender.com</a></td></tr>
+      <tr><td>Source on GitHub</td><td><a class="url" href="https://github.com/aswathas/sugan-project">https://github.com/aswathas/sugan-project</a></td></tr>
+      <tr><td>3D scene</td><td>live site &rarr; <a class="url" href="https://secureshare-2r3j.onrender.com/figure/journey.html">/figure/journey.html</a> — the trip of one file</td></tr>
+      <tr><td>Project report</td><td>the repository &rarr; <a class="url" href="https://github.com/aswathas/sugan-project/blob/main/report/SecureShare-Project-Report.pdf">report/SecureShare-Project-Report.pdf</a></td></tr>
+      <tr><td>Review deck</td><td>the repository &rarr; <a class="url" href="https://github.com/aswathas/sugan-project/blob/main/report/SecureShare-REVIEW-3.pptx">report/SecureShare-REVIEW-3.pptx</a></td></tr>
+    </table>
+  </div>
+
+  <p class="meta">
+    21ECC402P — Computer Communication and Network Security<br>
+    Pradeesh M (RA2311004010278) &nbsp;·&nbsp; Varun P R (RA2311004010287) &nbsp;·&nbsp; Sugandhan A (RA2311004010297)
+  </p>
+
+  <h2>What the demonstration proves</h2>
+  <p>A file is encrypted in the sender's browser before it is uploaded. The server receives the
+  encrypted bytes, the IV and the AES key wrapped under the recipient's public key. It never
+  receives the file, the AES key or the private key. So the three places we show the stored bytes
+  are unreadable, and only the recipient's browser can turn them back into the original file.</p>
+
+  <h2>1 · Run it</h2>
+  <p>The application installs nothing. Node 18 or later is enough.</p>
+  <pre>git clone https://github.com/aswathas/sugan-project.git
+cd sugan-project
+npm start</pre>
+  <p>Open <span class="url">http://127.0.0.1:3000</span>, or the live version at
+  <span class="url">https://secureshare-2r3j.onrender.com</span>. The demonstration needs
+  <b>two people</b>, so use two browsers, two profiles, or two machines on the same network.</p>
+
+  <div class="foot"><span>SecureShare — 21ECC402P</span><span>Page 1 of 4</span></div>
+</section>
+
+<section class="page">
+  <h2>2 · The demonstration, step by step</h2>
+  <ol class="steps">
+    <li><b>Register the sender</b> (machine A). The browser generates the key pair here, on this
+    machine. The private key is kept in IndexedDB as a non-extractable key, and the twelve-word
+    recovery phrase is shown once — write it down; nobody can reset it.
+    <span class="expect">a twelve-word phrase, and a line saying the key never left this device.</span></li>
+
+    <li><b>Register the recipient</b> (machine B). Same thing. The recipient's public key is
+    published to the server; the private key stays on machine B.</li>
+
+    <li><b>Send a file</b> (machine A). Press <b>New</b>, choose a PDF, choose the recipient, choose
+    view-only or view-and-download, choose the self-destruct time, and press <b>Encrypt and send</b>.
+    <span class="expect">the fingerprint of the recipient's public key, and the file's SHA-256 hash.</span></li>
+
+    <li><b>Show what the server holds.</b> The panel <b>What the server actually stored</b> puts the
+    first 16 bytes of your file next to the first 16 bytes the server really holds on disk.
+    <span class="expect">two different byte strings. Your file starts <span class="mono">%PDF-1.7</span>; the server holds random-looking bytes.</span></li>
+
+    <li><b>Decrypt on the other side</b> (machine B). The file appears under <b>Shared with me</b>.
+    Press <b>Decrypt</b>. It opens, and the card then reads <b>verified</b>, because the recipient's
+    browser recomputes the SHA-256 of the decrypted file and it matches the hash the sender sent.
+    <span class="expect">the original PDF opens, byte for byte, and the card says verified.</span></li>
+
+    <li><b>Show the machine.</b> Open <a class="url" href="https://secureshare-2r3j.onrender.com/figure/journey.html">/figure/journey.html</a>. The scene draws
+    one file travelling: picked up as a readable sheet, sealed into a capsule by the press, carried
+    across the trust boundary as ciphertext, dropped into the server's hopper, and brought back out
+    and unwrapped by the recipient's private key.
+    <span class="expect">the private keys stay in their boxes on both sides of the line; only the capsule crosses it.</span></li>
+  </ol>
+
+  <div class="two">
+    <figure class="shot">
+      <img src="img/stored-panel.png" alt="The panel comparing the sender's first 16 bytes with the bytes the server holds">
+      <figcaption>The proof panel: the sender's file on the left, the server's bytes on the right.</figcaption>
+    </figure>
+    <figure class="shot">
+      <img src="img/send-panel.png" alt="The send panel with the file chooser, the recipient fingerprint and the Encrypt and send button">
+      <figcaption>The send panel: the recipient's key fingerprint before the file is sent.</figcaption>
+    </figure>
+  </div>
+
+  <div class="foot"><span>SecureShare — 21ECC402P</span><span>Page 2 of 4</span></div>
+</section>
+
+<section class="page">
+  <h2>3 · The three proofs, if the panel is not enough</h2>
+
+  <h3>In the terminal</h3>
+  <p>This prints the name of every uploaded file next to the hex of the bytes actually stored on
+  disk, and the path of that file:</p>
+  <pre>npm run show:ciphertext
+
+kpit_loi.pdf
+  from jake to aswath   permission: download
+  file on disk : data/blobs/22f55ef5-3d2e-4846-a3fa-b509eac5c082.bin
+  stored bytes : 260404
+  first 16     : 01 84 6f 1d db c5 3f ad 15 22 6d 9a 5f 84 ac 09
+  as text      : ..o...?.."m._...
+  the sender's file began with something else; the server never saw it</pre>
+
+  <h3>On the disk</h3>
+  <p>The stored file is <span class="mono">data/blobs/&lt;share-id&gt;.bin</span>. Open it in any hex
+  viewer and compare it with the original PDF: the PDF begins <span class="mono">%PDF-1.7</span>, the
+  stored file does not. <span class="mono">data/db.json</span> holds no file content at all — only
+  the id, the wrapped key, the IV and the size.</p>
+
+  <h3>In the interface</h3>
+  <p>The panel in step 4 above, and the <b>Ciphertext on the server</b> figure in the left rail,
+  which counts the bytes the server holds.</p>
+
+  <figure class="shot">
+    <img src="../../public/shots/workspace.png" alt="The signed-in workspace: Shared with me, Sent by me, and the ciphertext comparison panel">
+    <figcaption>The workspace after signing in. The left rail counts the ciphertext on the server.</figcaption>
+  </figure>
+
+  <h2>4 · Two extra checks, if the professor wants them</h2>
+  <ul class="tight">
+    <li><b>A third person is refused.</b> Register an account that was never given the file and try
+    to open it. The server answers <span class="mono">403</span>; the bytes stay out of reach.</li>
+    <li><b>The file expires.</b> Send with the one-hour self-destruct. When the hour is up, the
+    server gives up the bytes and the card says so.</li>
+    <li><b>The trail is tamper-evident.</b> Every entry in the Activity panel carries the hash of the
+    one before it, so an edited entry breaks the chain, and the panel says the chain no longer
+    checks out.</li>
+  </ul>
+
+  <div class="foot"><span>SecureShare — 21ECC402P</span><span>Page 3 of 4</span></div>
+</section>
+
+<section class="page">
+  <h2>5 · The 3D scene</h2>
+  <p><a class="url" href="https://secureshare-2r3j.onrender.com/figure/journey.html">/figure/journey.html</a> is the one-page drawing of the whole system in
+  three dimensions. It runs in the browser from the project's own origin — no third party is
+  contacted, and the page needs no build step.</p>
+  <figure class="shot">
+    <img src="../screenshots/07-journey.png" alt="The 3D scene: two browsers, a server with a hopper, the trust boundary, and the file travelling">
+    <figcaption>Two browsers and one server, with a hard line between each browser and the server. The file is sealed into a capsule before it crosses.</figcaption>
+  </figure>
+
+  <h2>6 · Where to read more</h2>
+  <ul class="tight">
+    <li><b>Report</b> — <span class="mono">report/SecureShare-Project-Report.pdf</span>. Chapter 3 is
+    the system design: the key pairs, the wrapping, the trust boundary. Chapter 4 is the
+    verification, with the test cases and their results.</li>
+    <li><b>Source</b> — <span class="url">https://github.com/aswathas/sugan-project</span>. The whole
+    application is in <span class="mono">server/</span>, <span class="mono">public/</span> and
+    <span class="mono">figure/</span>.</li>
+    <li><b>Readme</b> — the README in the repository carries the same walkthrough, the list of
+    security choices and the stated limits of the design.</li>
+  </ul>
+
+  <div class="card">
+    <p style="margin:0 0 3pt; font-weight:700;">The one sentence to say at the end</p>
+    <p style="margin:0;">The file was encrypted before it left the sender's browser, the server
+    stored only the encrypted bytes, and the only key that can read them is the recipient's private
+    key, which never left that browser either.</p>
+  </div>
+
+  <div class="foot"><span>SecureShare — 21ECC402P</span><span>Page 4 of 4</span></div>
+</section>
+
+</body>
+</html>

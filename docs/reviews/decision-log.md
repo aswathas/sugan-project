@@ -392,3 +392,65 @@
 - Consequence: a new account sees its recovery phrase, a first account can hand over its address
   and get a file back, the arrival toast works, the first send says what happened where it can
   still be read, and an empty view says what belongs in it.
+
+## D24 - The scene is drawn from a corner, and the press is a frame the sheet can go under
+
+- Prompt: "i told you improvise the 3d components?", then "check all the buys using /pototeo mode and
+  solve test end to end and solve it please".
+- Decision: the 3D scene was rebuilt by hand rather than described. Four things changed. The camera
+  now looks at the machine from a corner (a fixed 17 degree turn) instead of straight down the table,
+  because a straight-on view of a long bench hides every part that has depth: the two guide posts of
+  the press, the rails of the frame and the depth of the hopper all disappeared into one line. The
+  press itself became a frame: two side rails and a back member with the sheet running between them,
+  where before it was a solid plate that the sheet slid straight through, with the die hanging ten
+  units above the paper it was supposed to be sealing; the head now rides the posts between a
+  bottom position where the die rests on the sheet and a top position where it hangs clear, and the
+  return spring between the head and the beam stretches as the head comes down. The floor gained a
+  horizon: a drawn line on the ground where the world stops, wandering slightly because a hand drew
+  it, and not touched by the weather the way a shaded surface would be. The camera was pulled back
+  to radius 165 so the three stations still fit with the corner turn, and the phone view was lowered
+  to 52 degrees so the machines read as machines rather than as a plan.
+- Alternatives considered: (a) leaving the camera straight on and only fixing the press, which left
+  the depth of every part unreadable; (b) a solid backdrop wall instead of a drawn horizon, which the
+  fog ate completely and which read as a wall of a room rather than as a drawing; (c) adding a new
+  machine part, which the brief allows only if it earns its place, and the frame and the horizon
+  already earn theirs.
+- Evidence: the scene was captured at 1280x800 and at 390x844 in headless Chrome and read back; the
+  press crop was read back on its own and the frame, the posts, the beam, the head, the die and the
+  spring are all visible and joined; the label layer was measured in the running page (nine or ten
+  labels, no overlap, none off screen); `npm run test:browser` passes every check.
+- Consequence: the picture shows a machine that a sheet can travel through, on a ground that has an
+  edge, from a corner where the parts have depth.
+
+## D25 - The authenticator entry was orphaned by a new secret on every attempt
+
+- Prompt: "can you tell why everyhtime i need register with authenictaor of google its saying you
+  have never registered with this account is that because of render if so can we change platform to
+  cloudlfare or some free tier sites tell me?"
+- Decision: two causes, both confirmed in the code and the deployment, and the one that is ours is
+  fixed. `POST /api/totp/enroll` and both sign-in paths minted a **fresh** secret on every attempt
+  and overwrote the pending one, so a reload or a second click silently invalidated the entry the
+  phone had already scanned. A pending secret is now handed back for the ten minutes it is good for,
+  so the same secret is shown until the account confirms it. The other cause is the platform: the
+  app keeps everything in `data/db.json` on local disk, `data/` is not in git, and Render's free
+  web service has an ephemeral filesystem with no disk that can be attached, so every deploy, restart
+  or spin-down wipes the database, the accounts and the registered authenticators with it. The
+  answer given was that Render free cannot hold the state, that Cloudflare Workers with D1 (5 GB) and
+  R2 is the free tier that does hold it but wants the server rewritten as edge code, and that the
+  cheapest honest answer for a course project is a paid Render disk (7 USD a month) or keeping the
+  demonstration local. The code half was fixed now because it is a bug either way; the platform
+  half is Sugan's call.
+- Alternatives considered: (a) storing the factor in the browser and asking the server to trust the
+  phone, which removes the second factor; (b) a hosted free database, which adds a dependency to a
+  zero-dependency project; (c) doing nothing about the platform and calling it a hosting detail,
+  which is what made the symptom look mysterious.
+- Evidence: `test/selftest.js` now signs in twice while the phone is still scanning and asserts the
+  two attempts return the same secret; `npm test` passes; the Render rule is in Render's own
+  documentation that free web services have an ephemeral filesystem and cannot mount a disk.
+- Consequence: a retried sign-in no longer orphans the entry in the phone, and the remaining cause is
+  named out loud instead of showing up as a mysterious message from the app.
+| 2026-11-15 | The faculty demonstration is delivered as a four-page PDF (`report/SecureShare-Demo-Instructions.pdf`), built from `docs/instructions/demo-instructions.html` with headless Chrome, and sent to Sugan on WhatsApp with the live link, the GitHub link and the file attached | He has to show the faculty that the files are encrypted; a written walkthrough with the evidence and the links carries more than a chat message | user instruction: "send sugandhan the link of the project and github also instruction pdf" |
+| 2026-11-15 | The 3D scene was rebuilt by agy (Gemini 4 Hydrogen), under a written brief that fixed the style rules, the six-step story and the `window.__journey` contract the browser suite reads | the scene is a large, well-specified change that does not touch the same files as the delivery work | user instruction: "use agy hydrogen to do this" |
+| 2026-11-15 | Sugan gets the project links and the instruction PDF on WhatsApp, and the PDF is sent again when the scene changes under it | he has to show the faculty that the files are encrypted, and what he holds must match the live site | user instruction: "send sugandhan the link of the project and github also instruction pdf" |
+| 2026-11-15 | The 3D scene is drawn from a corner, the press is a frame the sheet slides under, and the floor gained a drawn horizon | the straight-on view hid every part that has depth, and the press was a solid plate the sheet passed through | user instruction: "i told you improvise the 3d components?" |
+| 2026-11-15 | A pending authenticator secret is handed back for the ten minutes it is good for, instead of a fresh one on every attempt | a reload or a second click was orphaning the entry the phone had already scanned | user instruction: "why everyhtime i need register with authenticator of google its saying you have never registered with this account" |

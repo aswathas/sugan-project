@@ -409,6 +409,17 @@ async function verify(username, code) {
     'no session may be issued before the second factor'
   );
   const enrolSecret = aliceBack.body.secret;
+  // A second attempt while the phone is still scanning must not hand out a
+  // different secret, or the entry in the app stops matching the server.
+  const aliceRetried = await call('/api/login', {
+    method: 'POST',
+    body: { username: 'alice', password: 'correct-horse' },
+  });
+  assert.strictEqual(
+    aliceRetried.body.secret,
+    enrolSecret,
+    'a retried sign-in must keep the secret the phone already scanned'
+  );
   const enrolBad = await call('/api/login/totp', {
     method: 'POST',
     body: { challenge: aliceBack.body.challenge, code: '111111' },
