@@ -1,11 +1,20 @@
 # SecureShare — end-to-end encrypted file sharing
 
-A website for sharing files securely. Each user registers and receives a **key pair generated in
-their browser**. A file is encrypted **before it leaves the browser**, using the recipient's public
-key, and only that recipient can decrypt it. The server stores ciphertext and public keys — never
-a private key, never plaintext.
+A website for sharing a file with one person, so that the file stays unreadable to everyone else
+including the server that stores it. Each user gets a key pair generated in their own browser; a
+file is encrypted before it leaves the sender's device using the recipient's public key; only that
+recipient can decrypt it. The sender also decides, per file, whether the recipient may only view
+it or may also download it.
 
-Client: Sugan. College submission. Runs on `localhost`; deployment comes later.
+Course project: **21ECC402P — Computer Communication and Network Security**.
+
+| | |
+|---|---|
+| Working site | `npm start`, then <http://127.0.0.1:3000> |
+| Report | [`report/SecureShare-Project-Report.pdf`](report/SecureShare-Project-Report.pdf) (43 pages) and [`.docx`](report/SecureShare-Project-Report.docx) |
+| Slides | [`report/SecureShare-REVIEW-3.pdf`](report/SecureShare-REVIEW-3.pdf) (15 slides) and [`.pptx`](report/SecureShare-REVIEW-3.pptx) |
+| Brief | [`REQUIREMENTS.md`](REQUIREMENTS.md) — the requirements agreed with the client |
+| Design | [`PRODUCT.md`](PRODUCT.md), [`docs/agents/`](docs/agents), [`docs/adr/`](docs/adr) |
 
 ## Run it
 
@@ -13,52 +22,82 @@ Client: Sugan. College submission. Runs on `localhost`; deployment comes later.
 npm start
 ```
 
-Then open <http://127.0.0.1:3000>. There is nothing to install — no dependencies, no build step.
-Node 18+ is enough (tested on Node 23).
+There is nothing to install: no dependencies, no build step, no database to provision, no paid
+service. Node 18 or later is enough (tested on Node 23).
 
-## Demo script (two browsers)
+For a two-machine demonstration, start the server on one laptop and open
+`http://<that-laptop's-LAN-IP>:3000` on the other. Both browsers must be on the same network.
 
-1. Open the site in **two different browsers or profiles** (or one normal window and one private
-   window — cookies and key storage are per browser).
-2. **Alice** registers. Her browser generates her key pair; the private key is stored in
-   IndexedDB on her device and never leaves it.
-3. **Bob** registers in the other browser. Same thing, on his device.
-4. Alice picks a PDF, picks Bob as the recipient, and presses **Encrypt in browser & send**. The
-   UI shows the fingerprint of Bob's public key that the file is encrypted to.
-5. Bob sees it under **Shared with me**, presses **Decrypt & download**, and gets the original
-   PDF back.
-6. Proof for the demo: the file on disk (`data/blobs/`) is ciphertext, and the API never returns
-   the file to anyone except the sender and the recipient.
+## Demo script
+
+1. **Laptop 1**: `npm start`, open the site, register. The browser generates your key pair; the
+   private key is stored on that device and never uploaded.
+2. **Laptop 2**: register as the second user.
+3. **Laptop 1**: pick a PDF, choose the recipient, choose view-only or view-and-download, and press
+   *Encrypt and send*. The interface shows the fingerprint of the recipient's public key that the
+   file is encrypted to.
+4. **Laptop 2**: the file appears under *Shared with me*. Press *Decrypt* and it opens.
+5. The evidence for the exam: the server's disk holds ciphertext only, and an unrelated user is
+   refused with `403`.
 
 ## How the encryption works
 
 Per share, in the sender's browser:
 
-1. A fresh AES-GCM 256 key is generated for that one file.
-2. The file is encrypted with AES-GCM (a random 96-bit IV per share).
-3. The AES key is wrapped with the recipient's RSA-OAEP 2048 public key.
+1. A fresh AES-GCM 256-bit key is generated for that one file.
+2. The file is encrypted with AES-GCM under a random 96-bit IV.
+3. The AES key is wrapped with the recipient's RSA-OAEP 2048-bit public key.
 4. Only the ciphertext, the IV and the wrapped key are uploaded.
 
-On the recipient's side, the private key in IndexedDB unwraps the AES key, which decrypts the
-file. The server is never involved in either step.
+On the recipient's side, the private key — a non-extractable `CryptoKey` in IndexedDB — unwraps the
+AES key, which decrypts the file. The server is never involved in either step.
+
+Other security choices: passwords are hashed with scrypt, sessions are server-side tokens in an
+`HttpOnly` cookie, and a new account cannot be used until a six-digit one-time code is verified.
+
+## Stated limits
+
+- *View only* is enforced in the interface. With end-to-end encryption the recipient holds the
+  plaintext once decrypted, so it is not a cryptographic lock.
+- There is no role model, no key revocation, no audit trail and no key backup yet.
+- A lost device means a lost private key and unreadable files.
+- Storage is a JSON file and a directory of ciphertext blobs: a single node, not a service.
+
+## Check it
+
+```
+npm test            # the server contract, end to end
+npm run test:browser  # the real interface in headless Chrome, two profiles
+```
+
+The self-test registers three users, proves an unverified account cannot sign in and a wrong code
+is rejected, encrypts a file for one of them, proves the stored blob contains no plaintext, proves
+the recipient decrypts to the original bytes, and proves a third user is refused with `403`.
+
+The browser test drives the actual interface in two separate Chrome profiles, so cookies and
+IndexedDB are genuinely per user. It asserts that the stored private key is non-extractable, that
+the server's disk holds ciphertext, and that the recipient's browser decrypts back to the original
+bytes. It also captures the screen figures used in the report.
 
 ## Layout
 
 ```
 server/index.js   HTTP server, API, static files
-server/store.js   JSON store + ciphertext blobs on disk (data/, gitignored)
-server/crypto.js  password hashing (scrypt), session tokens
-public/           the site: index.html, app.js, style.css
-test/selftest.js  end-to-end check of the whole share flow
-docs/             agent skills config, ADRs, decision log, change inventory
-REQUIREMENTS.md   the brief agreed with the client
+server/store.js   JSON store and ciphertext blobs (data/, gitignored)
+server/crypto.js  password hashing and session tokens
+server/mailer.js  delivery of the one-time code: console by default, free provider optional
+public/           the site: index.html, app.js, style.css, tokens.css, base.css, fonts/
+test/             self-test and headless browser test
+tools/            build-report.js and build-deck.js, which build the deliverables
+docs/             the brief, the figures, the report draft, the agent skills config, the ADRs
+report/           the generated report and slides
 ```
 
-## Check it
+The report and the deck are built from the Markdown in `docs/report-draft/` and the figures in
+`docs/figures/` by `tools/build-report.js` and `tools/build-deck.js`. Those two scripts need the
+`docx` and `pptxgenjs` packages, which are deliberately not project dependencies: the application
+itself installs nothing.
 
-```
-npm test
-```
+## Licence
 
-Registers three users, encrypts a file for one of them, proves the server holds only ciphertext,
-proves the recipient decrypts to the original bytes, and proves a third user gets `403`.
+The interface uses [Chivo Mono](public/fonts/OFL.txt), licensed under the SIL Open Font License.
