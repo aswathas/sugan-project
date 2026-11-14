@@ -17,9 +17,19 @@ function load() {
       shares: db.shares || {},
       activity: db.activity || [],
       loginAttempts: db.loginAttempts || {},
+      pendingLogins: db.pendingLogins || {},
+      pendingTotp: db.pendingTotp || {},
     };
   } catch {
-    return { users: {}, sessions: {}, shares: {}, activity: [], loginAttempts: {} };
+    return {
+      users: {},
+      sessions: {},
+      shares: {},
+      activity: [],
+      loginAttempts: {},
+      pendingLogins: {},
+      pendingTotp: {},
+    };
   }
 }
 

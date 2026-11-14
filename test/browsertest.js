@@ -611,6 +611,33 @@ async function signUp(cdp, sessionId, username) {
     );
     console.log('PASS  the sign in screen explains how the encryption works');
 
+    // The anatomy is one component, mounted in two places: on the sign in
+    // page, and in the how-it-works panel once you are inside.
+    await evaluate(bob, bobPage, "document.getElementById('how-it-works').click()");
+    await waitFor(
+      bob,
+      bobPage,
+      "!document.getElementById('anatomy-dialog').classList.contains('hidden')",
+      'the anatomy panel opens'
+    );
+    const inApp = await evaluate(
+      bob,
+      bobPage,
+      `(() => {
+        const body = document.getElementById('anatomy-dialog-body');
+        return {
+          moments: body.querySelectorAll('.moment').length,
+          code: Boolean(body.querySelector('.code-sample__pre code')),
+          faq: body.querySelectorAll('.faq__item').length,
+        };
+      })()`
+    );
+    assert.strictEqual(inApp.moments, 3, 'the panel must carry the three moments');
+    assert.ok(inApp.code, 'the panel must carry the real code');
+    assert.ok(inApp.faq >= 4, 'the panel must carry the questions a visitor asks');
+    await evaluate(bob, bobPage, "document.getElementById('anatomy-close').click()");
+    console.log('PASS  the anatomy is one component, on the sign in page and in the app');
+
     const chip = await evaluate(
       bob,
       bobPage,
@@ -779,6 +806,46 @@ async function signUp(cdp, sessionId, username) {
       'the arrival is announced'
     );
     console.log('PASS  a file that arrives is announced');
+
+    // The second factor must be usable from the page, not only from the API:
+    // open the panel, take the secret the app shows, give it the code it
+    // expects, and the account is protected from then on.
+    await evaluate(alice, alicePage, "document.getElementById('totp-open').click()");
+    await waitFor(
+      alice,
+      alicePage,
+      "document.getElementById('totp-secret').textContent.trim().length > 10",
+      'the setup shows the secret'
+    );
+    const secret = await evaluate(
+      alice,
+      alicePage,
+      "document.getElementById('totp-secret').textContent.trim()"
+    );
+    const totp = require('../server/totp.js');
+    const code = totp.codeAt(secret, Math.floor(Date.now() / 1000 / 30));
+    await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        document.getElementById('totp-code').value = ${JSON.stringify(code)};
+        document.getElementById('totp-confirm').click();
+        return true;
+      })()`
+    );
+    await waitFor(
+      alice,
+      alicePage,
+      "[...document.querySelectorAll('#toasts .toast')].some((t) => t.textContent.includes('second factor'))",
+      'the factor turns on'
+    );
+    const factorOn = await evaluate(
+      alice,
+      alicePage,
+      "(async () => (await (await fetch('/api/totp')).json()).enabled)()"
+    );
+    assert.strictEqual(factorOn, true, 'the account must ask for a code after this');
+    console.log('PASS  the authenticator app turns on the second factor from the page');
 
     console.log('\nALL BROWSER CHECKS PASSED');
   } finally {

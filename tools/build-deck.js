@@ -79,7 +79,7 @@ function bullets(slide, items, options) {
   slide.addText(rows, {
     fontFace: FONT, fontSize: options.fontSize || 14, color: options.color || INK2,
     x: options.x, y: options.y, w: options.w, h: options.h,
-    lineSpacingMultiple: 1.25, paraSpaceAfter: 10, margin: 0, valign: 'top',
+    lineSpacingMultiple: 1.25, paraSpaceAfter: options.paraSpaceAfter || 10, margin: 0, valign: 'top',
   });
 }
 
@@ -377,9 +377,10 @@ for (const [file, title, cap] of modelSlides) {
   bullets(
     slide,
     [
-      'A dashboard in the shape of a file drive: shared with me, sent by me, starred, recent and trashed, with sorting, a grid and a list view, selection with bulk actions, and the keyboard shortcuts of a file drive.',
+      'A dashboard in the shape of a file drive: shared with me, sent by me, starred, recent and trashed, with sorting, two view modes, bulk actions and keyboard shortcuts.',
       'Drag a card onto a person to share it, the way a file drive does.',
       'Google sign-in, verified on the server against Google’s published keys.',
+      'A second factor: the account needs a code from Google Authenticator as well as the password.',
       'A self-destruct timer on every share; when the time is up the server gives up the bytes.',
       'Revocation and a trash: the sender can call a share off, or delete it and restore it later.',
       'An end-to-end integrity check: the sender’s SHA-256 fingerprint, recomputed after decryption.',
@@ -388,7 +389,7 @@ for (const [file, title, cap] of modelSlides) {
       'A twelve word recovery phrase, so a lost device does not mean lost files.',
       'An audit trail chained by hash, and a copyable receipt for one file.',
     ],
-    { x: 0.9, y: 1.75, w: 7.3, h: 5.0, fontSize: 11 }
+    { x: 0.9, y: 1.75, w: 7.3, h: 5.0, fontSize: 10.5, paraSpaceAfter: 6 }
   );
   slide.addImage({ path: path.join(SHOTS, '03-sent.png'), x: 8.6, y: 1.85, w: 3.95, h: 2.52 });
   caption(slide, 'After a send: the file’s own first bytes next to the bytes the server holds.', 8.6, 4.45, 3.95);
@@ -407,7 +408,7 @@ for (const [file, title, cap] of modelSlides) {
     slide,
     [
       ['Software / technology', 'Purpose'],
-      ['Node.js node:http and node:crypto', 'Server, password hashing, session tokens and the hash-chained audit trail; no framework and no package'],
+      ['Node.js node:http and node:crypto', 'Server, password hashing, session tokens, the RFC 6238 one-time codes and the hash-chained audit trail; no framework and no package'],
       ['Web Cryptography API', 'RSA-OAEP and ECDSA keys, AES-GCM and AES-KW, PBKDF2 and SHA-256, all in the browser'],
       ['Google Identity Services and the JWKS', 'Sign-in by Google; the identity token is verified on the server with node:crypto'],
       ['IndexedDB', 'Non-extractable private key, stored on the user’s own device'],

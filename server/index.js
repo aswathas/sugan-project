@@ -7,6 +7,7 @@ const { load, save, writeBlob, readBlob, removeBlob } = require('./store');
 const { hashPassword, verifyPassword, newToken } = require('./crypto');
 const { deliverOtp } = require('./mailer');
 const { verifyGoogleIdToken } = require('./google');
+const totp = require('./totp');
 const trail = require('./trail');
 
 const PORT = Number(process.env.PORT || 3000);
@@ -352,11 +353,108 @@ async function handleApi(req, res, url) {
     }
     delete attempts[username];
     db.loginAttempts = attempts;
+    // A second factor, when the account has one, holds the session back. The
+    // password has been checked; the session waits for the code.
+    if (user.totpSecret) {
+      const challenge = newToken();
+      db.pendingLogins = db.pendingLogins || {};
+      db.pendingLogins[challenge] = { username, expires: Date.now() + 5 * 60 * 1000, tries: 0 };
+      save(db);
+      return json(res, 200, { requiresTotp: true, challenge });
+    }
     const token = newToken();
     db.sessions[token] = { username, expires: Date.now() + SESSION_TTL_MS };
     save(db);
     res.setHeader('Set-Cookie', `sid=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`);
     return json(res, 200, { username });
+  }
+
+  if (route === 'POST /api/login/totp') {
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const pending = db.pendingLogins || {};
+    const entry = pending[body.challenge];
+    if (!entry || entry.expires < Date.now()) {
+      delete pending[body.challenge];
+      db.pendingLogins = pending;
+      save(db);
+      return json(res, 401, { error: 'that sign-in attempt has expired, start again' });
+    }
+    const user = db.users[entry.username];
+    if (!user || !user.totpSecret || !totp.verify(user.totpSecret, body.code)) {
+      entry.tries += 1;
+      if (entry.tries >= MAX_LOGIN_ATTEMPTS) {
+        delete pending[body.challenge];
+      }
+      db.pendingLogins = pending;
+      save(db);
+      return json(res, 401, { error: 'that code is not right' });
+    }
+    delete pending[body.challenge];
+    db.pendingLogins = pending;
+    const token = newToken();
+    db.sessions[token] = { username: entry.username, expires: Date.now() + SESSION_TTL_MS };
+    save(db);
+    res.setHeader('Set-Cookie', `sid=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`);
+    return json(res, 200, { username: entry.username });
+  }
+
+  if (route === 'GET /api/totp') {
+    const username = requireUser(req, res);
+    if (!username) return;
+    const user = db.users[username];
+    return json(res, 200, { enabled: Boolean(user && user.totpSecret) });
+  }
+
+  if (route === 'POST /api/totp/enroll') {
+    const username = requireUser(req, res);
+    if (!username) return;
+    const user = db.users[username];
+    if (!user) return json(res, 404, { error: 'not found' });
+    const secret = totp.generateSecret();
+    db.pendingTotp = db.pendingTotp || {};
+    db.pendingTotp[username] = { secret, expires: Date.now() + 10 * 60 * 1000 };
+    save(db);
+    // The secret is shown once, here, and is kept until the account confirms
+    // it with a code. It is not live until then.
+    return json(res, 200, {
+      secret: totp.group(secret),
+      uri: totp.uri(secret, username),
+    });
+  }
+
+  if (route === 'POST /api/totp/confirm') {
+    const username = requireUser(req, res);
+    if (!username) return;
+    const user = db.users[username];
+    if (!user) return json(res, 404, { error: 'not found' });
+    const pending = (db.pendingTotp || {})[username];
+    if (!pending || pending.expires < Date.now()) {
+      return json(res, 400, { error: 'the setup has expired, start again' });
+    }
+    if (!totp.verify(pending.secret, JSON.parse((await readBody(req)).toString('utf8') || '{}').code)) {
+      return json(res, 400, { error: 'that code is not right, check the app and try again' });
+    }
+    user.totpSecret = pending.secret;
+    delete (db.pendingTotp || {})[username];
+    save(db);
+    logEvent('totp_enabled', username, null, null);
+    return json(res, 200, { enabled: true });
+  }
+
+  if (route === 'POST /api/totp/disable') {
+    const username = requireUser(req, res);
+    if (!username) return;
+    const user = db.users[username];
+    if (!user) return json(res, 404, { error: 'not found' });
+    if (!user.totpSecret) return json(res, 200, { enabled: false });
+    const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    if (!totp.verify(user.totpSecret, body.code)) {
+      return json(res, 401, { error: 'that code is not right' });
+    }
+    delete user.totpSecret;
+    save(db);
+    logEvent('totp_disabled', username, null, null);
+    return json(res, 200, { enabled: false });
   }
 
   if (route === 'POST /api/logout') {

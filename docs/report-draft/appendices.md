@@ -45,7 +45,7 @@ The four commands below were executed on the development machine. The output is 
 
 Command: `npm test`
 
-The test starts the server on an ephemeral port, registers its users, and prints the following twenty lines on success.
+The test starts the server on an ephemeral port, registers its users, and prints the following twenty-one lines on success.
 
 ```
 PASS  register + email one-time code verification
@@ -64,19 +64,20 @@ PASS  repeated failed sign-ins and wrong codes are locked out
 PASS  signing out everywhere ends every session of the account
 PASS  starring is per user, and delete, restore and purge behave
 PASS  the headers and the favicon leave the Google button working
+PASS  the second factor holds the sign-in until the code is given
 PASS  the client id is published for the browser
 PASS  a valid Google token signs the user in and stores the key pair
 PASS  an existing account keeps the key it already published
 PASS  wrong audience, wrong issuer, expired, tampered, forged and malformed tokens are all refused
 ```
 
-The assertions behind these lines are the ones listed in Table 4.1 as TC-01 to TC-11, TC-16 to TC-27, TC-32 to TC-37 and TC-46 to TC-47. A line is printed only after its assertion has passed: each condition is checked with the Node.js `assert` module, and an assertion failure ends the run with a `FAIL` line and a non-zero exit status before the pass lines are printed.
+The assertions behind these lines are the ones listed in Table 4.1 as TC-01 to TC-11, TC-16 to TC-27, TC-32 to TC-37, TC-46 to TC-47 and TC-51. A line is printed only after its assertion has passed: each condition is checked with the Node.js `assert` module, and an assertion failure ends the run with a `FAIL` line and a non-zero exit status before the pass lines are printed.
 
 ### A2.2 Headless browser test
 
 Command: `npm run test:browser`
 
-The test requires Chrome or Edge on the machine. If neither is present, it prints a skip line and exits without failing. When a browser is present, it launches two profiles, drives the interface, and prints the following twenty-three lines on success.
+The test requires Chrome or Edge on the machine. If neither is present, it prints a skip line and exits without failing. When a browser is present, it launches two profiles, drives the interface, and prints the following twenty-five lines on success.
 
 ```
 PASS  alice has a twelve word recovery phrase and a wrapped key on the server
@@ -93,6 +94,7 @@ PASS  the recipient dashboard shows the incoming shares, one of them revoked
 PASS  recipient decrypted in the browser, verified and signed
 PASS  a password protected share refuses the wrong password and opens with the right one
 PASS  the sign in screen explains how the encryption works
+PASS  the anatomy is one component, on the sign in page and in the app
 PASS  the card carries a file type chip
 PASS  the actions give a toast
 PASS  the filter chips narrow the view
@@ -102,11 +104,12 @@ PASS  the shortcut list opens and names the keys
 PASS  the details panel shows the whole chain for a file
 PASS  the security receipt can be copied
 PASS  a file that arrives is announced
+PASS  the authenticator app turns on the second factor from the page
 
 ALL BROWSER CHECKS PASSED
 ```
 
-These checks correspond to TC-12 to TC-15, TC-28 to TC-31, TC-38 to TC-45 and TC-48 to TC-50 in Table 4.1, and a line is printed only after its assertion has passed. The test plants a marker string in the PDF before sending it, then asserts that the marker does not appear in the stored blob; this is the basis of the eighth line. It reads the stored `CryptoKey` from IndexedDB and asserts that its `extractable` property is `false`; this is the basis of the fifth line.
+These checks correspond to TC-12 to TC-15, TC-28 to TC-31, TC-38 to TC-45, TC-48 to TC-50, TC-52 and TC-53 in Table 4.1, and a line is printed only after its assertion has passed. The test plants a marker string in the PDF before sending it, then asserts that the marker does not appear in the stored blob; this is the basis of the eighth line. It reads the stored `CryptoKey` from IndexedDB and asserts that its `extractable` property is `false`; this is the basis of the fifth line.
 
 ### A2.3 Live check against a running server
 

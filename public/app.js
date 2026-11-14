@@ -66,6 +66,8 @@ let visibleFiles = [];
 let activeCardId = null;
 let draggedShareId = null;
 let previewShareId = null;
+// Set while a sign-in waits for the second factor.
+let pendingChallenge = null;
 // The trail as the server last returned it, so a receipt can quote the
 // events for one file.
 let activityEvents = [];
@@ -222,7 +224,22 @@ function showApp() {
 
 async function signIn(username, password) {
   const session = await api('/api/login', { method: 'POST', body: { username, password } });
-  me = session.username;
+  if (session.requiresTotp) {
+    // The password was right, but the account has a second factor. The
+    // session waits for the code.
+    pendingChallenge = session.challenge;
+    $('login-totp-field').classList.remove('hidden');
+    $('login-totp-code').value = '';
+    $('login-totp-code').focus();
+    return;
+  }
+  await completeSignIn(session.username);
+}
+
+async function completeSignIn(username) {
+  pendingChallenge = null;
+  $('login-totp-field').classList.add('hidden');
+  me = username;
   myKeys = (await idbGet(me)) || null;
   await recoverKeyIfAsked(username);
   showApp();
@@ -233,6 +250,68 @@ async function signIn(username, password) {
       'No key pair on this device for this account, so files sent to you cannot be decrypted here.',
       'error'
     );
+  }
+}
+
+/* ---------------- the second factor ---------------- */
+
+// An authenticator app: Google Authenticator or any other that speaks the
+// same scheme. The secret is shown once and kept on the phone.
+function isTotpOpen() {
+  const panel = $('totp-panel');
+  return Boolean(panel && !panel.classList.contains('hidden'));
+}
+
+async function openTotpPanel() {
+  try {
+    const state = await api('/api/totp');
+    $('totp-panel').classList.remove('hidden');
+    $('totp-code').value = '';
+    if (state.enabled) {
+      $('totp-setup').classList.add('hidden');
+      $('totp-state').textContent =
+        'This account needs a six digit code from your authenticator app as well as the password.';
+      $('totp-confirm').classList.add('hidden');
+      $('totp-disable').classList.remove('hidden');
+    } else {
+      $('totp-setup').classList.remove('hidden');
+      $('totp-state').textContent =
+        'Turn on a second factor and this account will need the authenticator app and the password to sign in.';
+      $('totp-confirm').classList.remove('hidden');
+      $('totp-disable').classList.add('hidden');
+      const setup = await api('/api/totp/enroll', { method: 'POST' });
+      $('totp-secret').textContent = setup.secret;
+      $('totp-uri').textContent = setup.uri;
+    }
+    $('totp-close').focus();
+  } catch (err) {
+    setMainStatus(err.message, 'error');
+  }
+}
+
+function closeTotpPanel() {
+  if (!isTotpOpen()) return;
+  $('totp-panel').classList.add('hidden');
+  $('totp-code').value = '';
+}
+
+async function confirmTotp() {
+  try {
+    await api('/api/totp/confirm', { method: 'POST', body: { code: $('totp-code').value.trim() } });
+    toast('The second factor is on. The next sign-in asks for a code.');
+    closeTotpPanel();
+  } catch (err) {
+    $('totp-state').textContent = err.message;
+  }
+}
+
+async function disableTotp() {
+  try {
+    await api('/api/totp/disable', { method: 'POST', body: { code: $('totp-code').value.trim() } });
+    toast('The second factor is off.');
+    closeTotpPanel();
+  } catch (err) {
+    $('totp-state').textContent = err.message;
   }
 }
 
@@ -1937,7 +2016,15 @@ function bindEvents() {
     event.preventDefault();
     $('auth-error').textContent = '';
     try {
-      await signIn($('login-username').value.trim(), $('login-password').value);
+      if (pendingChallenge) {
+        const result = await api('/api/login/totp', {
+          method: 'POST',
+          body: { challenge: pendingChallenge, code: $('login-totp-code').value.trim() },
+        });
+        await completeSignIn(result.username);
+      } else {
+        await signIn($('login-username').value.trim(), $('login-password').value);
+      }
     } catch (err) {
       $('auth-error').textContent = err.message;
     }
@@ -2155,6 +2242,14 @@ function bindEvents() {
 
   $('recipient').addEventListener('change', showRecipientKey);
 
+  $('totp-open').addEventListener('click', openTotpPanel);
+  $('totp-close').addEventListener('click', closeTotpPanel);
+  $('totp-confirm').addEventListener('click', confirmTotp);
+  $('totp-disable').addEventListener('click', disableTotp);
+  $('totp-panel').addEventListener('click', (event) => {
+    if (event.target === $('totp-panel')) closeTotpPanel();
+  });
+
   $('file').addEventListener('change', (event) => describeFile(event.target.files[0]));
 
   $('drop').addEventListener('dragover', (event) => {
@@ -2340,6 +2435,22 @@ function bindEvents() {
       if (event.key === 'Escape') {
         event.preventDefault();
         closePreview();
+      }
+      return;
+    }
+
+    if (isTotpOpen()) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeTotpPanel();
+      }
+      return;
+    }
+
+    if (window.Anatomy && window.Anatomy.isOpen()) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        window.Anatomy.close();
       }
       return;
     }

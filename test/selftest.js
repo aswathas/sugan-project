@@ -385,6 +385,73 @@ async function verify(username, code) {
   assert.strictEqual(iconRes.status, 200, 'the favicon must be served');
   assert.ok(pageText.includes('favicon.svg'), 'the page must link the favicon');
 
+  // The second factor: an authenticator app, as Google Authenticator and
+  // every other one speak it. The password alone must not open the account.
+  const totp = require('../server/totp.js');
+  const step = () => Math.floor(Date.now() / 1000 / 30);
+  // The sign-out-everywhere test above ended alice's session, so sign in again
+  // for a fresh one to carry the factor.
+  const aliceBack = await call('/api/login', {
+    method: 'POST',
+    body: { username: 'alice', password: 'correct-horse' },
+  });
+  const totpCookie = aliceBack.headers.get('set-cookie').split(';')[0];
+  const state = await call('/api/totp', { cookie: totpCookie });
+  assert.strictEqual(state.body.enabled, false, 'a new account has no second factor');
+  const enroll = await call('/api/totp/enroll', { method: 'POST', cookie: totpCookie });
+  assert.strictEqual(enroll.status, 200, 'the setup must give a secret');
+  assert.ok(enroll.body.secret && enroll.body.uri, 'the setup must give a secret and an address');
+  assert.ok(enroll.body.uri.startsWith('otpauth://totp/'), 'the address must be one an app can read');
+  const wrong = await call('/api/totp/confirm', {
+    method: 'POST',
+    cookie: totpCookie,
+    body: { code: '000000' },
+  });
+  assert.strictEqual(wrong.status, 400, 'a wrong code must not turn the factor on');
+  const confirm = await call('/api/totp/confirm', {
+    method: 'POST',
+    cookie: totpCookie,
+    body: { code: totp.codeAt(enroll.body.secret, step()) },
+  });
+  assert.strictEqual(confirm.status, 200, 'the right code must turn the factor on');
+  const on = await call('/api/totp', { cookie: totpCookie });
+  assert.strictEqual(on.body.enabled, true, 'the factor must be on after it is confirmed');
+
+  await call('/api/logout', { method: 'POST', cookie: totpCookie });
+  const passwordOnly = await call('/api/login', {
+    method: 'POST',
+    body: { username: 'alice', password: 'correct-horse' },
+  });
+  assert.strictEqual(passwordOnly.status, 200, 'the password is still right');
+  assert.strictEqual(passwordOnly.body.requiresTotp, true, 'the password alone must not open the account');
+  assert.ok(passwordOnly.body.challenge, 'the server must hold the sign-in open for a code');
+  assert.ok(
+    !passwordOnly.headers.get('set-cookie'),
+    'no session may be issued before the second factor'
+  );
+  const badCode = await call('/api/login/totp', {
+    method: 'POST',
+    body: { challenge: passwordOnly.body.challenge, code: '111111' },
+  });
+  assert.strictEqual(badCode.status, 401, 'a wrong code must not open the account');
+  const withCode = await call('/api/login/totp', {
+    method: 'POST',
+    body: { challenge: passwordOnly.body.challenge, code: totp.codeAt(enroll.body.secret, step()) },
+  });
+  assert.strictEqual(withCode.status, 200, 'the right code must open the account');
+  assert.ok(withCode.headers.get('set-cookie'), 'the session must be issued after the code');
+  const off = await call('/api/totp/disable', {
+    method: 'POST',
+    cookie: withCode.headers.get('set-cookie').split(';')[0],
+    body: { code: totp.codeAt(enroll.body.secret, step()) },
+  });
+  assert.strictEqual(off.body.enabled, false, 'the factor must be able to be turned off');
+  const passwordAgain = await call('/api/login', {
+    method: 'POST',
+    body: { username: 'alice', password: 'correct-horse' },
+  });
+  assert.ok(!passwordAgain.body.requiresTotp, 'without the factor the password is enough again');
+
   console.log('PASS  register + email one-time code verification');
   console.log('PASS  unverified account cannot sign in, wrong code rejected');
   console.log('PASS  register + login + keypair publish');
@@ -401,6 +468,7 @@ async function verify(username, code) {
   console.log('PASS  signing out everywhere ends every session of the account');
   console.log('PASS  starring is per user, and delete, restore and purge behave');
   console.log("PASS  the headers and the favicon leave the Google button working");
+  console.log('PASS  the second factor holds the sign-in until the code is given');
 
   server.close();
   fs.rmSync(DATA_DIR, { recursive: true, force: true });
