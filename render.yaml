@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: secureshare
+    runtime: node
+    plan: free
+    # The application has no dependencies to install, so the build step is empty.
+    buildCommand: ""
+    startCommand: npm start
+    healthCheckPath: /api/config
+    autoDeploy: true
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 10000
+      # Set these in the Render dashboard, not here.
+      # GOOGLE_CLIENT_ID: the client id from Google Cloud, which makes the
+      #   "Continue with Google" button live. The origin of this service must be
+      #   listed as an authorised JavaScript origin in the Google console.
+      # ACCESS_CODE: if set, registration requires this code. Leave it empty on a
+      #   private demo; set it before exposing the service to the internet.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: ACCESS_CODE
+        sync: false

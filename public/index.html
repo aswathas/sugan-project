@@ -13,9 +13,17 @@
     <div class="wordmark">
       <span class="wordmark__mark" aria-hidden="true"></span>
       <span class="wordmark__name">SecureShare</span>
-      <span class="wordmark__claim">The server never sees your file</span>
     </div>
+
+    <div class="search hidden" id="search-wrap">
+      <input class="search__input" id="search" type="search" placeholder="Search files" aria-label="Search files" autocomplete="off">
+    </div>
+
     <div id="session" class="session hidden">
+      <span class="plate plate--on-ink">
+        <span>public key</span>
+        <span class="plate__figure" id="stat-key">none</span>
+      </span>
       <span class="session__who">Signed in as <strong id="who"></strong></span>
       <button id="logout" class="btn btn--on-ink" type="button">Sign out</button>
     </div>
@@ -62,6 +70,10 @@
           <label class="route__label" for="register-password">Password</label>
           <input class="input" id="register-password" type="password" autocomplete="new-password" minlength="6" required>
         </div>
+        <div class="field hidden" id="register-access">
+          <label class="route__label" for="register-access-code">Demo access code</label>
+          <input class="input" id="register-access-code" autocomplete="off">
+        </div>
         <p class="note">
           Your key pair is generated in this browser when you register. The private key is stored
           on this device and never sent to the server. We email you a 6-digit code to verify the
@@ -83,52 +95,104 @@
         <button class="btn btn--primary" type="submit">Verify and sign in</button>
       </form>
 
+      <div id="google-block" class="hidden">
+        <p class="or">or</p>
+        <div id="google-button"></div>
+        <p id="google-note" class="note"></p>
+      </div>
+
       <p id="auth-error" class="status status--error"></p>
     </div>
   </section>
 
-  <!-- APP -->
+  <!-- DASHBOARD -->
   <section id="app" class="hidden">
-    <div class="work">
-      <div>
-        <span class="tab">Send a file</span>
-        <div class="route">
-          <div class="route__step">
-            <span class="route__label" id="file-label">File</span>
-            <input class="input" id="file" type="file" aria-labelledby="file-label">
-          </div>
+    <div class="drive">
+      <nav class="rail" aria-label="Sections">
+        <button id="new-share" class="btn btn--primary rail__new" type="button">New</button>
 
-          <div class="route__step">
-            <label class="route__label" for="recipient">Recipient</label>
-            <select class="input" id="recipient"></select>
-            <p id="recipient-key" class="note"></p>
-          </div>
+        <ul class="rail__list">
+          <li>
+            <button class="rail__item" type="button" data-view="inbox" aria-pressed="true">
+              <span>Shared with me</span>
+              <span class="rail__count" id="count-inbox">0</span>
+            </button>
+          </li>
+          <li>
+            <button class="rail__item" type="button" data-view="sent">
+              <span>Sent by me</span>
+              <span class="rail__count" id="count-sent">0</span>
+            </button>
+          </li>
+          <li>
+            <button class="rail__item" type="button" data-view="recent">
+              <span>Recent</span>
+              <span class="rail__count" id="count-recent">0</span>
+            </button>
+          </li>
+        </ul>
 
-          <div class="route__step">
-            <fieldset class="choice">
-              <legend class="choice__legend">What they may do with it</legend>
-              <div class="choice__cells">
-                <button type="button" class="cell" data-permission="view" aria-pressed="true">View only</button>
-                <button type="button" class="cell" data-permission="download" aria-pressed="false">View and download</button>
-              </div>
-            </fieldset>
-          </div>
+        <div class="rail__storage">
+          <span class="rail__label">Ciphertext on the server</span>
+          <span class="rail__figure" id="stat-stored">0 B</span>
+        </div>
+      </nav>
 
-          <div class="route__step">
-            <button id="share" class="btn btn--primary" type="button">Encrypt and send</button>
-            <p id="share-status" class="status"></p>
+      <div class="main">
+        <div class="main__head">
+          <h2 id="view-title">Shared with me</h2>
+          <span class="main__meta" id="view-meta"></span>
+        </div>
+
+        <div class="cards" id="cards"></div>
+
+        <div class="new-share hidden" id="new-form">
+          <div class="route">
+            <div class="route__step">
+              <span class="route__label" id="file-label">File</span>
+              <input class="input" id="file" type="file" aria-labelledby="file-label">
+            </div>
+
+            <div class="route__step">
+              <label class="route__label" for="recipient">Recipient</label>
+              <select class="input" id="recipient"></select>
+              <p id="recipient-key" class="note"></p>
+            </div>
+
+            <div class="route__step">
+              <fieldset class="choice">
+                <legend class="choice__legend">What they may do with it</legend>
+                <div class="choice__cells">
+                  <button type="button" class="cell" data-permission="view" aria-pressed="true">View only</button>
+                  <button type="button" class="cell" data-permission="download" aria-pressed="false">View and download</button>
+                </div>
+              </fieldset>
+            </div>
+
+            <div class="route__step">
+              <button id="share" class="btn btn--primary" type="button">Encrypt and send</button>
+              <p id="share-status" class="status"></p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div>
-        <div class="board-group">
-          <span class="tab">Shared with me</span>
-          <ul class="board" id="inbox"></ul>
-        </div>
-        <div class="board-group">
-          <span class="tab">Sent by me</span>
-          <ul class="board" id="sent"></ul>
+        <div class="evidence">
+          <span class="tab">What the server actually stored</span>
+          <p id="evidence-note" class="note">
+            Send a file and this panel shows the first bytes of your file next to the first bytes the
+            server really holds on disk. They are never the same bytes.
+          </p>
+          <div class="compare">
+            <div class="compare__cell">
+              <span class="compare__label">Your file, first 16 bytes</span>
+              <code class="compare__value" id="evidence-original">none yet</code>
+            </div>
+            <div class="compare__cell compare__cell--ink">
+              <span class="compare__label">On the server, first 16 bytes</span>
+              <code class="compare__value compare__value--figure" id="evidence-stored">none yet</code>
+            </div>
+          </div>
+          <p class="note" id="evidence-foot"></p>
         </div>
       </div>
     </div>

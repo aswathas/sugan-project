@@ -164,6 +164,43 @@ async function verify(username, code) {
   const decrypted = Buffer.from(await subtle.decrypt({ name: 'AES-GCM', iv: unb64(meta.body.iv) }, aesForBob, stored));
   assert.strictEqual(decrypted.toString('utf8'), plaintext.toString('utf8'), 'decrypted file must match the original');
 
+  // A public deployment must not accept registrations from strangers.
+  process.env.ACCESS_CODE = 'demo-code';
+  const dave = await makeUser('dave');
+  const noCode = await call('/api/register', {
+    method: 'POST',
+    body: {
+      username: 'dave',
+      email: 'dave@example.com',
+      password: 'correct-horse',
+      publicKey: dave.publicKey,
+    },
+  });
+  assert.strictEqual(noCode.status, 403, 'registration without the access code must be refused');
+  const badAccessCode = await call('/api/register', {
+    method: 'POST',
+    body: {
+      username: 'dave',
+      email: 'dave@example.com',
+      password: 'correct-horse',
+      accessCode: 'wrong-code',
+      publicKey: dave.publicKey,
+    },
+  });
+  assert.strictEqual(badAccessCode.status, 403, 'registration with the wrong access code must be refused');
+  const rightCode = await call('/api/register', {
+    method: 'POST',
+    body: {
+      username: 'dave',
+      email: 'dave@example.com',
+      password: 'correct-horse',
+      accessCode: 'demo-code',
+      publicKey: dave.publicKey,
+    },
+  });
+  assert.strictEqual(rightCode.status, 201, 'registration with the right access code must work');
+  delete process.env.ACCESS_CODE;
+
   console.log('PASS  register + email one-time code verification');
   console.log('PASS  unverified account cannot sign in, wrong code rejected');
   console.log('PASS  register + login + keypair publish');
@@ -171,6 +208,7 @@ async function verify(username, code) {
   console.log('PASS  recipient decrypts to the original bytes');
   console.log('PASS  third party cannot list or fetch the share (403)');
   console.log('PASS  wrong password rejected (401)');
+  console.log('PASS  the demo access code gates registration (403 without it, 201 with it)');
 
   server.close();
   fs.rmSync(DATA_DIR, { recursive: true, force: true });

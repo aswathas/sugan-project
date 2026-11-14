@@ -14,6 +14,10 @@ let myKeys = null;
 let users = [];
 let pendingUser = null;
 let permission = 'view';
+let lastEvidence = null;
+let view = 'inbox';
+let query = '';
+let shares = { inbox: [], sent: [] };
 
 /* ---------------- base64 ---------------- */
 
@@ -27,6 +31,7 @@ function toB64(bytes) {
 }
 
 function fromB64(b64) {
+  if (typeof b64 !== 'string' || !b64) throw new Error('missing encoded value');
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
@@ -77,6 +82,7 @@ async function generateKeyPair() {
 }
 
 async function fingerprint(publicKeyB64) {
+  if (typeof publicKeyB64 !== 'string' || !publicKeyB64) return 'none';
   const digest = await crypto.subtle.digest('SHA-256', fromB64(publicKeyB64));
   return toB64(digest).replace(/[^a-zA-Z0-9]/g, '').slice(0, 12).toLowerCase();
 }
@@ -101,6 +107,7 @@ function showApp() {
   $('auth').classList.add('hidden');
   $('app').classList.remove('hidden');
   $('session').classList.remove('hidden');
+  $('search-wrap').classList.remove('hidden');
   $('who').textContent = me;
 }
 
@@ -136,7 +143,13 @@ $('register-form').addEventListener('submit', async (event) => {
     const { pair, publicKeyB64 } = await generateKeyPair();
     const result = await api('/api/register', {
       method: 'POST',
-      body: { username, email, password, publicKey: publicKeyB64 },
+      body: {
+        username,
+        email,
+        password,
+        publicKey: publicKeyB64,
+        accessCode: $('register-access-code').value.trim(),
+      },
     });
     await idbPut(username, { privateKey: pair.privateKey, publicKey: pair.publicKey, publicKeyB64 });
 
@@ -191,6 +204,70 @@ $('logout').addEventListener('click', async () => {
   location.reload();
 });
 
+/* ---------------- google sign-in ---------------- */
+
+async function initGoogleSignIn() {
+  let config;
+  try {
+    config = await api('/api/config');
+  } catch (err) {
+    return;
+  }
+  if (config.requireAccessCode) {
+    $('register-access').classList.remove('hidden');
+  }
+  if (!config.googleClientId) return;
+
+  $('google-block').classList.remove('hidden');
+  const script = document.createElement('script');
+  script.src = 'https://accounts.google.com/gsi/client';
+  script.async = true;
+  script.defer = true;
+  script.onload = () => {
+    window.google.accounts.id.initialize({
+      client_id: config.googleClientId,
+      callback: onGoogleCredential,
+      ux_mode: 'popup',
+    });
+    window.google.accounts.id.renderButton($('google-button'), {
+      theme: 'outline',
+      size: 'large',
+      shape: 'rectangular',
+      text: 'continue_with',
+      width: 320,
+    });
+  };
+  script.onerror = () => {
+    $('google-note').textContent = 'Google sign-in needs internet. The email code works offline.';
+  };
+  document.head.appendChild(script);
+}
+
+async function onGoogleCredential(response) {
+  try {
+    const { pair, publicKeyB64 } = await generateKeyPair();
+    const result = await api('/api/google-signin', {
+      method: 'POST',
+      body: { idToken: response.credential, publicKey: publicKeyB64 },
+    });
+    me = result.username;
+    if (result.keyProvided) {
+      await idbPut(me, { privateKey: pair.privateKey, publicKey: pair.publicKey, publicKeyB64 });
+    }
+    myKeys = (await idbGet(me)) || null;
+    showApp();
+    await refresh();
+    if (!myKeys) {
+      $('share-status').textContent =
+        'This account was first used on another device, so this device holds no private key for it. Files sent to you cannot be decrypted here.';
+    }
+  } catch (err) {
+    $('auth-error').textContent = err.message;
+  }
+}
+
+initGoogleSignIn();
+
 /* ---------------- permission ---------------- */
 
 for (const cell of document.querySelectorAll('[data-permission]')) {
@@ -202,7 +279,17 @@ for (const cell of document.querySelectorAll('[data-permission]')) {
   });
 }
 
-/* ---------------- share ---------------- */
+/* ---------------- the dashboard ---------------- */
+
+const VIEWS = {
+  inbox: { title: 'Shared with me', files: () => shares.inbox, direction: () => 'from' },
+  sent: { title: 'Sent by me', files: () => shares.sent, direction: () => 'to' },
+  recent: {
+    title: 'Recent',
+    files: () => [...shares.inbox, ...shares.sent].sort((a, b) => b.createdAt - a.createdAt),
+    direction: (file) => (file.from === me ? 'to' : 'from'),
+  },
+};
 
 async function refresh() {
   const list = await api('/api/users');
@@ -219,20 +306,139 @@ async function refresh() {
   }
   await showRecipientKey();
 
-  const shares = await api('/api/shares');
-  renderBoard($('inbox'), shares.inbox, 'from');
-  renderBoard($('sent'), shares.sent, 'to');
+  const loaded = await api('/api/shares');
+  shares = loaded;
+  render();
 }
+
+function render() {
+  const opened = openedShares();
+  const bytes = [...shares.inbox, ...shares.sent].reduce((sum, share) => sum + (share.size || 0), 0);
+  $('count-inbox').textContent = String(shares.inbox.length);
+  $('count-sent').textContent = String(shares.sent.length);
+  $('count-recent').textContent = String(shares.inbox.length + shares.sent.length);
+  $('stat-stored').textContent = formatSize(bytes);
+  if (myKeys && myKeys.publicKeyB64) {
+    fingerprint(myKeys.publicKeyB64).then((print) => {
+      $('stat-key').textContent = print;
+    });
+  }
+
+  for (const item of document.querySelectorAll('.rail__item')) {
+    item.setAttribute('aria-pressed', String(item.dataset.view === view));
+  }
+
+  const isNew = view === 'new';
+  $('new-form').classList.toggle('hidden', !isNew);
+  $('cards').classList.toggle('hidden', isNew);
+
+  if (isNew) {
+    $('view-title').textContent = 'New share';
+    $('view-meta').textContent = 'Encrypt a file for one person';
+    return;
+  }
+
+  const current = VIEWS[view];
+  $('view-title').textContent = current.title;
+  const files = current.files().filter((file) => !query || file.filename.toLowerCase().includes(query));
+  const unread = files.filter((file) => current.direction(file) === 'from' && !opened.has(file.id)).length;
+  $('view-meta').textContent =
+    `${files.length} file${files.length === 1 ? '' : 's'}` + (unread ? `, ${unread} unopened` : '');
+  renderCards(files, current.direction);
+}
+
+function renderCards(files, direction) {
+  const container = $('cards');
+  container.innerHTML = '';
+  if (!files.length) {
+    const empty = document.createElement('div');
+    empty.className = 'cards__empty';
+    empty.textContent = query
+      ? 'Nothing matches that search.'
+      : view === 'sent'
+        ? 'You have not sent anything yet.'
+        : 'Nothing has been shared with you yet.';
+    container.appendChild(empty);
+    return;
+  }
+
+  const opened = openedShares();
+  for (const file of files) {
+    const directionKey = direction(file);
+    const unread = directionKey === 'from' && !opened.has(file.id);
+    const card = document.createElement('article');
+    card.className = unread ? 'card-file card-file--unread' : 'card-file';
+
+    const top = document.createElement('div');
+    top.className = 'card-file__top';
+    const name = document.createElement('div');
+    name.className = 'card-file__name';
+    name.textContent = file.filename;
+    if (unread) {
+      const live = document.createElement('span');
+      live.className = 'live';
+      live.setAttribute('aria-hidden', 'true');
+      top.appendChild(live);
+    }
+    top.appendChild(name);
+
+    const meta = document.createElement('div');
+    meta.className = 'card-file__meta';
+    const who = document.createElement('span');
+    who.textContent = directionKey === 'from' ? `from ${file.from}` : `to ${file.to}`;
+    const size = document.createElement('span');
+    size.textContent = formatSize(file.size);
+    const when = document.createElement('span');
+    when.textContent = new Date(file.createdAt).toLocaleString();
+    meta.append(who, size, when);
+
+    const foot = document.createElement('div');
+    foot.className = 'card-file__foot';
+    const access = document.createElement('span');
+    access.className = 'badge';
+    access.textContent = file.permission === 'view' ? 'view only' : 'view and download';
+    foot.appendChild(access);
+    const button = document.createElement('button');
+    button.className = 'btn btn--small';
+    button.type = 'button';
+    button.textContent = directionKey === 'from' ? 'Decrypt' : 'Details';
+    button.addEventListener('click', () => (directionKey === 'from' ? openShare(file.id) : showSent(file.id)));
+    foot.appendChild(button);
+
+    card.append(top, meta, foot);
+    container.appendChild(card);
+  }
+}
+
+for (const item of document.querySelectorAll('.rail__item')) {
+  item.addEventListener('click', () => {
+    view = item.dataset.view;
+    render();
+  });
+}
+
+$('new-share').addEventListener('click', () => {
+  view = 'new';
+  render();
+  $('file').focus();
+});
+
+$('search').addEventListener('input', (event) => {
+  query = event.target.value.trim().toLowerCase();
+  render();
+});
+
+/* ---------------- recipient key ---------------- */
 
 async function showRecipientKey() {
   const user = users.find((u) => u.username === $('recipient').value);
   const note = $('recipient-key');
+  note.innerHTML = '';
   if (!user) {
     note.textContent = 'No other users registered yet. Share the address so someone can register.';
     return;
   }
   const print = await fingerprint(user.publicKey);
-  note.innerHTML = '';
   const plate = document.createElement('span');
   plate.className = 'plate';
   const caption = document.createElement('span');
@@ -245,6 +451,8 @@ async function showRecipientKey() {
 }
 
 $('recipient').addEventListener('change', showRecipientKey);
+
+/* ---------------- share ---------------- */
 
 $('share').addEventListener('click', async () => {
   const file = $('file').files[0];
@@ -269,6 +477,9 @@ $('share').addEventListener('click', async () => {
   const button = $('share');
   button.disabled = true;
   try {
+    const originalBytes = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+    const originalHead = [...originalBytes].map((byte) => byte.toString(16).padStart(2, '0')).join(' ');
+
     const aes = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aes, await file.arrayBuffer());
@@ -276,7 +487,7 @@ $('share').addEventListener('click', async () => {
     const publicKey = await crypto.subtle.importKey('spki', fromB64(target.publicKey), RSA, false, ['encrypt']);
     const wrappedKey = await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, publicKey, rawAes);
 
-    await api('/api/shares', {
+    const share = await api('/api/shares', {
       method: 'POST',
       body: {
         recipient,
@@ -295,6 +506,9 @@ $('share').addEventListener('click', async () => {
         : `Encrypted and sent to ${recipient}. They can open and save it.`;
     $('file').value = '';
     await refresh();
+    await showEvidence(share.id, file.name, originalHead);
+    view = 'sent';
+    render();
   } catch (err) {
     status.className = 'status status--error';
     status.textContent = err.message;
@@ -303,7 +517,23 @@ $('share').addEventListener('click', async () => {
   }
 });
 
-/* ---------------- the board ---------------- */
+/* ---------------- evidence: what the server really stored ---------------- */
+
+async function showEvidence(shareId, filename, originalHead) {
+  try {
+    const head = await api(`/api/shares/${shareId}/cipher-head`);
+    $('evidence-original').textContent = originalHead || 'not kept by the browser';
+    $('evidence-stored').textContent = head.head.slice(0, 32);
+    $('evidence-foot').textContent =
+      `The server holds ${formatSize(head.size)} for ${filename}. The same bytes on disk are in data/blobs/${shareId}.bin and start ${head.readable}. ` +
+      'Open that file in any hex viewer, or run the show:ciphertext script, to see it for yourself.';
+    lastEvidence = { shareId, filename };
+  } catch (err) {
+    $('evidence-foot').textContent = err.message;
+  }
+}
+
+/* ---------------- opening a file ---------------- */
 
 const OPENED_KEY = 'secureshare-opened';
 
@@ -319,67 +549,6 @@ function markOpened(id) {
   const opened = openedShares();
   opened.add(id);
   localStorage.setItem(OPENED_KEY, JSON.stringify([...opened]));
-}
-
-function renderBoard(container, files, directionKey) {
-  container.innerHTML = '';
-  if (!files.length) {
-    const empty = document.createElement('li');
-    empty.className = 'row__empty';
-    empty.textContent = directionKey === 'from' ? 'Nothing has been shared with you yet.' : 'You have not sent anything yet.';
-    container.appendChild(empty);
-    return;
-  }
-
-  const opened = openedShares();
-  for (const file of files) {
-    const item = document.createElement('li');
-    const unread = directionKey === 'from' && !opened.has(file.id);
-    item.className = unread ? 'row row--unread' : 'row';
-
-    const left = document.createElement('div');
-    const name = document.createElement('div');
-    name.className = 'row__name';
-    name.textContent = file.filename;
-
-    const meta = document.createElement('div');
-    meta.className = 'row__meta';
-    const other = document.createElement('span');
-    other.textContent = directionKey === 'from' ? `from ${file.from}` : `to ${file.to}`;
-    const size = document.createElement('span');
-    size.textContent = formatSize(file.size);
-    const when = document.createElement('span');
-    when.textContent = new Date(file.createdAt).toLocaleString();
-    const access = document.createElement('span');
-    access.textContent = file.permission === 'view' ? 'view only' : 'view and download';
-    meta.append(other, size, when, access);
-    if (unread) {
-      const state = document.createElement('span');
-      state.textContent = 'not opened yet';
-      meta.appendChild(state);
-    }
-    left.append(name, meta);
-
-    const action = document.createElement('div');
-    action.className = 'row__action';
-    if (unread) {
-      const live = document.createElement('span');
-      live.className = 'live';
-      live.setAttribute('aria-hidden', 'true');
-      action.appendChild(live);
-    }
-    const button = document.createElement('button');
-    button.className = 'btn';
-    button.type = 'button';
-    button.textContent = directionKey === 'from' ? 'Decrypt' : 'Details';
-    button.addEventListener('click', () =>
-      directionKey === 'from' ? openShare(file.id) : showSent(file.id)
-    );
-    action.appendChild(button);
-
-    item.append(left, action);
-    container.appendChild(item);
-  }
 }
 
 function formatSize(bytes) {
@@ -446,6 +615,7 @@ async function showSent(id) {
     status.className = 'status status--ok';
     status.textContent =
       `Sent to ${meta.to}. The server holds ciphertext only, and ${meta.permission === 'view' ? 'the file is marked view only' : 'the file can be saved'}.`;
+    await showEvidence(meta.id, meta.filename, null);
   } catch (err) {
     status.className = 'status status--error';
     status.textContent = err.message;

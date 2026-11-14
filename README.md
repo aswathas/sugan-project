@@ -28,17 +28,58 @@ service. Node 18 or later is enough (tested on Node 23).
 For a two-machine demonstration, start the server on one laptop and open
 `http://<that-laptop's-LAN-IP>:3000` on the other. Both browsers must be on the same network.
 
+### Environment
+
+| Variable | Effect |
+|---|---|
+| `HOST`, `PORT` | where the server listens. Defaults to `127.0.0.1:3000` |
+| `DATA_DIR` | where the JSON store and the ciphertext blobs live. Defaults to `data/` |
+| `GOOGLE_CLIENT_ID` | turns on the *Continue with Google* button. Without it the button stays hidden |
+| `ACCESS_CODE` | when set, registration requires this code. Use it on any public deployment |
+| `MAIL_MODE`, `RESEND_API_KEY`, `MAIL_FROM` | send the one-time code by email instead of printing it in the terminal |
+
+### A public URL
+
+`render.yaml` is a blueprint for a free Render deployment: no build step, `HOST=0.0.0.0`, health
+check on `/api/config`, and the client id and access code set in the Render dashboard rather than
+in the file. For a throwaway link, a reverse tunnel works too:
+
+```
+ssh -R 80:127.0.0.1:3000 nokey@localhost.run
+```
+
+The tunnel URL rotates and lives only while the machine is on.
+
 ## Demo script
 
 1. **Laptop 1**: `npm start`, open the site, register. The browser generates your key pair; the
    private key is stored on that device and never uploaded.
 2. **Laptop 2**: register as the second user.
-3. **Laptop 1**: pick a PDF, choose the recipient, choose view-only or view-and-download, and press
-   *Encrypt and send*. The interface shows the fingerprint of the recipient's public key that the
-   file is encrypted to.
-4. **Laptop 2**: the file appears under *Shared with me*. Press *Decrypt* and it opens.
+3. **Laptop 1**: click *New*, pick a PDF, choose the recipient, choose view-only or view-and-download,
+   and press *Encrypt and send*. The interface shows the fingerprint of the recipient's public key
+   that the file is encrypted to.
+4. **Laptop 2**: the file appears under *Shared with me* with a live mark. Press *Decrypt* and it
+   opens.
 5. The evidence for the exam: the server's disk holds ciphertext only, and an unrelated user is
    refused with `403`.
+
+## Showing that the server really holds ciphertext
+
+Three places, all showing the same thing:
+
+1. **In the app.** After a send, the panel *What the server actually stored* puts your file's first
+   16 bytes next to the bytes the server holds, and names the file on disk.
+2. **On disk.** The stored file is `data/blobs/<share-id>.bin`. Open it in any hex viewer.
+3. **In the terminal.**
+
+   ```
+   npm run show:ciphertext
+   ```
+
+   It prints the name of the uploaded file next to the hex of the bytes actually stored, and the
+   path on disk.
+
+`data/db.json` holds no file content at all: only the id, the wrapped key, the IV and the size.
 
 ## How the encryption works
 
