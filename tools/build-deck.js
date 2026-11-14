@@ -379,16 +379,16 @@ for (const [file, title, cap] of modelSlides) {
     [
       'A dashboard in the shape of a file drive: shared with me, sent by me, starred, recent and trashed, with sorting, a grid and a list view, selection with bulk actions, and the keyboard shortcuts of a file drive.',
       'Drag a card onto a person to share it, the way a file drive does.',
-      'Google sign-in, with the identity token verified on the server against Google’s published keys.',
+      'Google sign-in, verified on the server against Google’s published keys.',
       'A self-destruct timer on every share; when the time is up the server gives up the bytes.',
       'Revocation and a trash: the sender can call a share off, or delete it and restore it later.',
-      'An end-to-end integrity check: the sender’s SHA-256 fingerprint of the file, recomputed after decryption.',
-      'A signature per share, so the recipient can prove who sent it.',
-      'A password on a share, so the file cannot be opened without it.',
+      'An end-to-end integrity check: the sender’s SHA-256 fingerprint, recomputed after decryption.',
+      'A signature over the parties, the permission and the expiry, so the recipient can prove who sent it.',
+      'A password on a share wraps the file key a second time: it needs the recipient’s key and the password.',
       'A twelve word recovery phrase, so a lost device does not mean lost files.',
-      'An audit trail whose entries are chained by hash, so an edited entry breaks the chain.',
+      'An audit trail chained by hash, and a copyable receipt for one file.',
     ],
-    { x: 0.9, y: 1.75, w: 7.3, h: 5.0, fontSize: 12 }
+    { x: 0.9, y: 1.75, w: 7.3, h: 5.0, fontSize: 11 }
   );
   slide.addImage({ path: path.join(SHOTS, '03-sent.png'), x: 8.6, y: 1.85, w: 3.95, h: 2.52 });
   caption(slide, 'After a send: the file’s own first bytes next to the bytes the server holds.', 8.6, 4.45, 3.95);

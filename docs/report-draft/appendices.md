@@ -24,9 +24,9 @@ Table A1.2 Test programs and build programs
 
 | File | What it is |
 |---|---|
-| `test/selftest.js` | The server-contract test. Starts the server on an ephemeral port against a temporary data directory and drives the whole contract: registration and the one-time code, the demo access code, the encryption path, the ciphertext on disk, the unauthorised third party, expiry, revocation, starring, the trash, the audit chain, the lockout and the sign-out. 19 checks. |
+| `test/selftest.js` | The server-contract test. Starts the server on an ephemeral port against a temporary data directory and drives the whole contract: registration and the one-time code, the demo access code, the encryption path, the ciphertext on disk, the unauthorised third party, expiry, revocation, starring, the trash, the audit chain, the lockout, the sign-out, the scoping of the trash and the response headers. 20 checks. |
 | `test/googletest.js` | The Google verification test. Serves its own public keys and proves the server refuses a token with the wrong audience, the wrong issuer, an expired token, a tampered token, a forged token and a malformed one. 4 checks. |
-| `test/browsertest.js` | The interface test. Launches Chrome or Edge in headless mode with two separate profiles, drives the real forms and buttons over the DevTools protocol, and checks the dashboard, the counts, the evidence panel, the permission and the self-destruct badge, the revocation, the signature, the password protection, the toast, the filters, the bulk bar, the context menu and the shortcut list. 22 checks. It also captures the screenshots used in Chapter 4. |
+| `test/browsertest.js` | The interface test. Launches Chrome or Edge in headless mode with two separate profiles, drives the real forms and buttons over the DevTools protocol, and checks the dashboard, the counts, the evidence panel, the permission and the self-destruct badge, the revocation, the signature, the password protection, the toast, the filters, the bulk bar, the context menu, the shortcut list, the details panel, the security receipt and the announcement of an arriving share. 23 checks. It also captures the screenshots used in Chapter 4. |
 | `test/livecheck.js` | The read-only check against a server that is already running: the site, the assets, the security headers, the published configuration, the access-code gate and the session gates. 15 checks. |
 | `tools/test-all.js` | Runs every check in the project in the order a reviewer would, and says how many steps passed. 10 steps. |
 | `tools/build-report.js`, `tools/build-deliverables.js`, `tools/build-deck.js` | The builders for the report and the deck. They live outside the application on purpose: the application stays dependency-free. |
@@ -68,7 +68,7 @@ PASS  an existing account keeps the key it already published
 PASS  wrong audience, wrong issuer, expired, tampered, forged and malformed tokens are all refused
 ```
 
-The assertions behind these lines are the ones listed in Table 4.1 as TC-01 to TC-11, TC-16 to TC-27 and TC-32 to TC-37. A line is printed only after its assertion has passed: each condition is checked with the Node.js `assert` module, and an assertion failure ends the run with a `FAIL` line and a non-zero exit status before the pass lines are printed.
+The assertions behind these lines are the ones listed in Table 4.1 as TC-01 to TC-11, TC-16 to TC-27, TC-32 to TC-37 and TC-46 to TC-47. A line is printed only after its assertion has passed: each condition is checked with the Node.js `assert` module, and an assertion failure ends the run with a `FAIL` line and a non-zero exit status before the pass lines are printed.
 
 ### A2.2 Headless browser test
 
@@ -97,11 +97,14 @@ PASS  the filter chips narrow the view
 PASS  the bulk bar appears with the count
 PASS  a card has a context menu that closes on Escape
 PASS  the shortcut list opens and names the keys
+PASS  the details panel shows the whole chain for a file
+PASS  the security receipt can be copied
+PASS  a file that arrives is announced
 
 ALL BROWSER CHECKS PASSED
 ```
 
-These checks correspond to TC-12 to TC-15, TC-28 to TC-31 and TC-38 to TC-45 in Table 4.1, and a line is printed only after its assertion has passed. The test plants a marker string in the PDF before sending it, then asserts that the marker does not appear in the stored blob; this is the basis of the eighth line. It reads the stored `CryptoKey` from IndexedDB and asserts that its `extractable` property is `false`; this is the basis of the fifth line.
+These checks correspond to TC-12 to TC-15, TC-28 to TC-31 and TC-38 to TC-45, TC-48 to TC-50 in Table 4.1, and a line is printed only after its assertion has passed. The test plants a marker string in the PDF before sending it, then asserts that the marker does not appear in the stored blob; this is the basis of the eighth line. It reads the stored `CryptoKey` from IndexedDB and asserts that its `extractable` property is `false`; this is the basis of the fifth line.
 
 ### A2.3 Live check against a running server
 
