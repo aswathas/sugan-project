@@ -500,7 +500,7 @@ async function handleApi(req, res, url) {
       inbox: all.filter((s) => s.to === username && !s.deletedAt).map(view),
       sent: all.filter((s) => s.from === username && !s.deletedAt).map(view),
       starred: all.filter((s) => (s.starredBy || []).includes(username) && !s.deletedAt).map(view),
-      trashed: all.filter((s) => s.deletedAt).map(view),
+      trashed: all.filter((s) => (s.from === username || s.to === username) && s.deletedAt).map(view),
     });
   }
 

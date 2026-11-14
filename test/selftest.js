@@ -204,6 +204,13 @@ async function verify(username, code) {
   const afterDelete = await call('/api/shares', { cookie: aliceCookie });
   assert.strictEqual(afterDelete.body.sent.length, 1, 'a deleted share must leave the sent list');
   assert.strictEqual(afterDelete.body.trashed.length, 1, 'a deleted share must be in the trash');
+  // The trash is per user. Somebody else's deleted files are not ours to see.
+  const carolTrash = await call('/api/shares', { cookie: carolCookie });
+  assert.strictEqual(
+    carolTrash.body.trashed.length,
+    0,
+    "another user's deleted shares must not appear in my trash"
+  );
   const deletedBlob = await call(`/api/shares/${draftId}/blob`, { cookie: bobCookie });
   assert.strictEqual(deletedBlob.status, 410, 'a share in the trash must not hand over its bytes');
   await call(`/api/shares/${draftId}/restore`, { method: 'POST', cookie: aliceCookie });
