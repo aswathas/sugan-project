@@ -25,6 +25,7 @@
         <span class="plate__figure" id="stat-key">none</span>
       </span>
       <span class="session__who">Signed in as <strong id="who"></strong></span>
+      <button id="logout-all" class="btn btn--on-ink btn--small" type="button">All devices</button>
       <button id="logout" class="btn btn--on-ink" type="button">Sign out</button>
     </div>
   </div>
@@ -68,7 +69,7 @@
         </div>
         <div class="field">
           <label class="route__label" for="register-password">Password</label>
-          <input class="input" id="register-password" type="password" autocomplete="new-password" minlength="6" required>
+          <input class="input" id="register-password" type="password" autocomplete="new-password" minlength="8" required>
         </div>
         <div class="field hidden" id="register-access">
           <label class="route__label" for="register-access-code">Demo access code</label>
@@ -144,13 +145,22 @@
           <span class="main__meta" id="view-meta"></span>
         </div>
 
+        <p id="main-status" class="status main__status"></p>
+
         <div class="cards" id="cards"></div>
 
         <div class="new-share hidden" id="new-form">
           <div class="route">
             <div class="route__step">
               <span class="route__label" id="file-label">File</span>
-              <input class="input" id="file" type="file" aria-labelledby="file-label">
+              <div class="drop" id="drop">
+                <input class="input" id="file" type="file" aria-labelledby="file-label">
+                <p class="note" id="file-note">Drop a file here or choose one. Up to 25 MB.</p>
+              </div>
+              <div class="progress hidden" id="progress">
+                <div class="progress__track"><div class="progress__bar" id="progress-bar"></div></div>
+                <span class="progress__label" id="progress-label">Working</span>
+              </div>
             </div>
 
             <div class="route__step">
@@ -165,6 +175,18 @@
                 <div class="choice__cells">
                   <button type="button" class="cell" data-permission="view" aria-pressed="true">View only</button>
                   <button type="button" class="cell" data-permission="download" aria-pressed="false">View and download</button>
+                </div>
+              </fieldset>
+            </div>
+
+            <div class="route__step">
+              <fieldset class="choice">
+                <legend class="choice__legend">Self-destruct after</legend>
+                <div class="choice__cells choice__cells--four">
+                  <button type="button" class="cell" data-expiry="0" aria-pressed="true">Never</button>
+                  <button type="button" class="cell" data-expiry="3600" aria-pressed="false">1 hour</button>
+                  <button type="button" class="cell" data-expiry="86400" aria-pressed="false">1 day</button>
+                  <button type="button" class="cell" data-expiry="604800" aria-pressed="false">7 days</button>
                 </div>
               </fieldset>
             </div>
@@ -193,6 +215,13 @@
             </div>
           </div>
           <p class="note" id="evidence-foot"></p>
+        </div>
+
+        <div class="activity">
+          <span class="tab">Activity</span>
+          <p class="note">Everything that happened to the files you sent and received.</p>
+          <p class="note" id="trail-state">checking the trail</p>
+          <ul class="activity__list" id="activity"></ul>
         </div>
       </div>
     </div>

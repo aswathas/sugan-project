@@ -7,6 +7,7 @@ const { load, save, writeBlob, readBlob } = require('./store');
 const { hashPassword, verifyPassword, newToken } = require('./crypto');
 const { deliverOtp } = require('./mailer');
 const { verifyGoogleIdToken } = require('./google');
+const trail = require('./trail');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -14,6 +15,20 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const MAX_BODY = 64 * 1024 * 1024;
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const OTP_TTL_MS = 10 * 60 * 1000;
+const MAX_LOGIN_ATTEMPTS = 5;
+const MAX_OTP_ATTEMPTS = 5;
+const MAX_SHARES_PER_USER = 200;
+const MAX_FILENAME = 200;
+
+// The page runs its own script and its own styles and nothing else, so a page
+// that is ever injected cannot pull in a remote script of its own.
+const SECURITY_HEADERS = {
+  'Content-Security-Policy':
+    "default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://accounts.google.com; frame-src https://accounts.google.com; base-uri 'none'; form-action 'self'; object-src 'none'",
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+};
 
 const db = load();
 
@@ -100,6 +115,53 @@ function uniqueUsernameFor(payload) {
   return username;
 }
 
+// The audit trail. Every event names the share it belongs to, so the activity
+// feed can be filtered per user without ever showing a share of somebody else.
+// The entries are chained by server/trail.js, so an entry that is edited or
+// removed afterwards breaks the chain.
+function logEvent(type, actor, share, detail) {
+  db.activity = db.activity || [];
+  trail.append(db.activity, {
+    ts: Date.now(),
+    type,
+    actor,
+    shareId: share ? share.id : null,
+    filename: share ? share.filename : null,
+    with: share ? (share.from === actor ? share.to : share.from) : null,
+    detail: detail || null,
+  });
+  if (db.activity.length > 500) db.activity = db.activity.slice(-500);
+}
+
+function verifyTrail() {
+  return trail.verify(db.activity || []);
+}
+
+// A share is dead when the sender revoked it or when its time ran out. The
+// metadata stays visible so the card can say so; only the bytes are refused.
+function shareState(share, now = Date.now()) {
+  if (share.revokedAt) return 'revoked';
+  if (share.expiresAt && share.expiresAt <= now) return 'expired';
+  return 'live';
+}
+
+function shareView(share) {
+  return {
+    id: share.id,
+    from: share.from,
+    to: share.to,
+    filename: share.filename,
+    size: share.size,
+    permission: share.permission || 'view',
+    createdAt: share.createdAt,
+    expiresAt: share.expiresAt || null,
+    revokedAt: share.revokedAt || null,
+    openedAt: share.openedAt || null,
+    digest: share.digest || null,
+    state: shareState(share),
+  };
+}
+
 async function handleApi(req, res, url) {
   const route = `${req.method} ${url.pathname}`;
 
@@ -170,8 +232,8 @@ async function handleApi(req, res, url) {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || '')) {
       return json(res, 400, { error: 'a valid email address is required' });
     }
-    if (typeof password !== 'string' || password.length < 6) {
-      return json(res, 400, { error: 'password must be at least 6 characters' });
+    if (typeof password !== 'string' || password.length < 8) {
+      return json(res, 400, { error: 'password must be at least 8 characters' });
     }
     if (typeof publicKey !== 'string' || publicKey.length < 32) {
       return json(res, 400, { error: 'publicKey missing' });
@@ -213,9 +275,16 @@ async function handleApi(req, res, url) {
     if (!user) return json(res, 404, { error: 'no such user' });
     if (user.verified) return json(res, 400, { error: 'account is already verified' });
     if (!user.otp || user.otp.expires < Date.now()) {
-      return json(res, 400, { error: 'code expired — register again' });
+      return json(res, 400, { error: 'code expired, register again' });
     }
     if (!verifyPassword(String(code || ''), user.otp.salt, user.otp.hash)) {
+      user.otp.attempts = (user.otp.attempts || 0) + 1;
+      if (user.otp.attempts >= MAX_OTP_ATTEMPTS) {
+        delete user.otp;
+        save(db);
+        return json(res, 429, { error: 'too many wrong codes, register again' });
+      }
+      save(db);
       return json(res, 401, { error: 'wrong code' });
     }
     user.verified = true;
@@ -229,13 +298,30 @@ async function handleApi(req, res, url) {
 
   if (route === 'POST /api/login') {
     const { username, password } = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const attempts = db.loginAttempts || {};
+    const record = attempts[username];
+    if (record && record.count >= MAX_LOGIN_ATTEMPTS && record.until > Date.now()) {
+      return json(res, 429, {
+        error: `too many failed sign-ins, try again in ${Math.ceil((record.until - Date.now()) / 60000)} minutes`,
+      });
+    }
     const user = db.users[username];
     if (!user || !verifyPassword(String(password || ''), user.salt, user.hash)) {
+      if (record) {
+        record.count += 1;
+        record.until = Date.now() + 15 * 60 * 1000;
+      } else {
+        attempts[username] = { count: 1, until: Date.now() + 15 * 60 * 1000 };
+      }
+      db.loginAttempts = attempts;
+      save(db);
       return json(res, 401, { error: 'wrong username or password' });
     }
     if (!user.verified) {
       return json(res, 403, { error: 'verify your email with the code first' });
     }
+    delete attempts[username];
+    db.loginAttempts = attempts;
     const token = newToken();
     db.sessions[token] = { username, expires: Date.now() + SESSION_TTL_MS };
     save(db);
@@ -251,6 +337,21 @@ async function handleApi(req, res, url) {
     }
     res.setHeader('Set-Cookie', 'sid=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
     return json(res, 200, { ok: true });
+  }
+
+  if (route === 'POST /api/logout-all') {
+    const username = requireUser(req, res);
+    if (!username) return;
+    let ended = 0;
+    for (const [token, session] of Object.entries(db.sessions)) {
+      if (session.username === username) {
+        delete db.sessions[token];
+        ended += 1;
+      }
+    }
+    save(db);
+    res.setHeader('Set-Cookie', 'sid=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
+    return json(res, 200, { ok: true, ended });
   }
 
   if (route === 'GET /api/me') {
@@ -275,9 +376,20 @@ async function handleApi(req, res, url) {
     const permission = body.permission === 'download' ? 'download' : 'view';
     if (!db.users[recipient]) return json(res, 400, { error: 'recipient does not exist' });
     if (!filename || typeof filename !== 'string') return json(res, 400, { error: 'filename missing' });
+    if (filename.length > MAX_FILENAME) {
+      return json(res, 400, { error: `the file name must be at most ${MAX_FILENAME} characters` });
+    }
+    const held = Object.values(db.shares).filter((s) => s.from === username || s.to === username).length;
+    if (held >= MAX_SHARES_PER_USER) {
+      return json(res, 429, { error: `this account already holds the maximum of ${MAX_SHARES_PER_USER} files` });
+    }
     if (typeof iv !== 'string' || typeof wrappedKey !== 'string' || typeof ciphertext !== 'string') {
       return json(res, 400, { error: 'iv, wrappedKey and ciphertext are required' });
     }
+    if (body.digest != null && !/^[0-9a-f]{64}$/.test(String(body.digest))) {
+      return json(res, 400, { error: 'digest must be a sha-256 hex string' });
+    }
+    const lifetime = Math.max(0, Math.min(Number(body.expiresIn) || 0, 30 * 24 * 3600));
     const blob = Buffer.from(ciphertext, 'base64');
     const id = crypto.randomUUID();
     writeBlob(id, blob);
@@ -290,9 +402,14 @@ async function handleApi(req, res, url) {
       permission,
       iv,
       wrappedKey,
+      digest: body.digest || null,
       blob: `${id}.bin`,
       createdAt: Date.now(),
+      expiresAt: lifetime ? Date.now() + lifetime * 1000 : null,
+      revokedAt: null,
+      openedAt: null,
     };
+    logEvent('sent', username, db.shares[id], permission);
     save(db);
     return json(res, 201, { id });
   }
@@ -301,19 +418,59 @@ async function handleApi(req, res, url) {
     const username = requireUser(req, res);
     if (!username) return;
     const all = Object.values(db.shares).sort((a, b) => b.createdAt - a.createdAt);
-    const strip = (s) => ({
-      id: s.id,
-      from: s.from,
-      to: s.to,
-      filename: s.filename,
-      size: s.size,
-      permission: s.permission || 'view',
-      createdAt: s.createdAt,
-    });
     return json(res, 200, {
-      inbox: all.filter((s) => s.to === username).map(strip),
-      sent: all.filter((s) => s.from === username).map(strip),
+      inbox: all.filter((s) => s.to === username).map(shareView),
+      sent: all.filter((s) => s.from === username).map(shareView),
     });
+  }
+
+  if (route === 'GET /api/activity') {
+    const username = requireUser(req, res);
+    if (!username) return;
+    const mine = (db.activity || []).filter((event) => {
+      if (event.actor === username) return true;
+      const share = event.shareId ? db.shares[event.shareId] : null;
+      return share ? share.from === username || share.to === username : false;
+    });
+    return json(res, 200, { activity: mine.slice(-60).reverse() });
+  }
+
+  if (route === 'GET /api/activity/verify') {
+    const username = requireUser(req, res);
+    if (!username) return;
+    return json(res, 200, verifyTrail());
+  }
+
+  const revokeMatch = url.pathname.match(/^\/api\/shares\/([^/]+)\/revoke$/);
+  if (req.method === 'POST' && revokeMatch) {
+    const username = requireUser(req, res);
+    if (!username) return;
+    const share = db.shares[revokeMatch[1]];
+    if (!share) return json(res, 404, { error: 'not found' });
+    if (share.from !== username) return json(res, 403, { error: 'only the sender can revoke a share' });
+    if (share.openedAt) {
+      return json(res, 409, { error: 'the recipient already opened this file' });
+    }
+    if (share.revokedAt) return json(res, 409, { error: 'already revoked' });
+    share.revokedAt = Date.now();
+    logEvent('revoked', username, share, null);
+    save(db);
+    return json(res, 200, { id: share.id, revokedAt: share.revokedAt });
+  }
+
+  const openedMatch = url.pathname.match(/^\/api\/shares\/([^/]+)\/opened$/);
+  if (req.method === 'POST' && openedMatch) {
+    const username = requireUser(req, res);
+    if (!username) return;
+    const share = db.shares[openedMatch[1]];
+    if (!share) return json(res, 404, { error: 'not found' });
+    if (share.to !== username) return json(res, 403, { error: 'only the recipient can open a share' });
+    if (!share.openedAt) {
+      share.openedAt = Date.now();
+      logEvent('opened', username, share, null);
+      save(db);
+    }
+    return json(res, 200, { id: share.id, openedAt: share.openedAt });
   }
 
   const metaMatch = url.pathname.match(/^\/api\/shares\/([^/]+)$/);
@@ -325,17 +482,7 @@ async function handleApi(req, res, url) {
     if (share.from !== username && share.to !== username) {
       return json(res, 403, { error: 'not your share' });
     }
-    return json(res, 200, {
-      id: share.id,
-      from: share.from,
-      to: share.to,
-      filename: share.filename,
-      size: share.size,
-      permission: share.permission || 'view',
-      iv: share.iv,
-      wrappedKey: share.wrappedKey,
-      createdAt: share.createdAt,
-    });
+    return json(res, 200, { ...shareView(share), iv: share.iv, wrappedKey: share.wrappedKey });
   }
 
   const headMatch = url.pathname.match(/^\/api\/shares\/([^/]+)\/cipher-head$/);
@@ -367,6 +514,11 @@ async function handleApi(req, res, url) {
     if (!share) return json(res, 404, { error: 'not found' });
     if (share.from !== username && share.to !== username) {
       return json(res, 403, { error: 'not your share' });
+    }
+    // A revoked or expired share keeps its metadata but gives up its bytes.
+    const state = shareState(share);
+    if (state !== 'live') {
+      return json(res, 410, { error: state === 'revoked' ? 'this share was revoked' : 'this share has expired' });
     }
     const blob = readBlob(share.id);
     if (!blob) return json(res, 404, { error: 'blob missing' });
@@ -402,6 +554,7 @@ function serveStatic(res, pathname) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
   try {
     if (url.pathname.startsWith('/api/')) {
       await handleApi(req, res, url);

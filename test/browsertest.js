@@ -122,8 +122,12 @@ async function evaluate(cdp, sessionId, expression) {
 
 const SHOTS = path.join(__dirname, '..', 'docs', 'screenshots');
 
-async function shoot(cdp, sessionId, name) {
-  const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' }, sessionId);
+async function shoot(cdp, sessionId, name, fullPage = false) {
+  const { data } = await cdp.send(
+    'Page.captureScreenshot',
+    { format: 'png', captureBeyondViewport: fullPage },
+    sessionId
+  );
   fs.mkdirSync(SHOTS, { recursive: true });
   fs.writeFileSync(path.join(SHOTS, name), Buffer.from(data, 'base64'));
 }
@@ -234,7 +238,7 @@ async function signUp(cdp, sessionId, username) {
       "!document.getElementById('new-form').classList.contains('hidden')",
       'send panel opens'
     );
-    await shoot(alice, alicePage, '02-share-panel.png');
+    await shoot(alice, alicePage, '02-share-panel.png', true);
     const uploadPath = path.join(DATA_DIR, 'syllabus.pdf');
     fs.writeFileSync(uploadPath, `%PDF-1.4 ${MARKER}`);
     const { root } = await alice.send('DOM.getDocument', {}, alicePage);
@@ -288,22 +292,98 @@ async function signUp(cdp, sessionId, username) {
     assert.ok(!stored.includes(MARKER), 'the server must not hold plaintext');
     console.log('PASS  server disk holds ciphertext, not the file');
 
+    // A second file, this one with a self-destruct timer.
+    await evaluate(alice, alicePage, "document.getElementById('new-share').click()");
+    await evaluate(alice, alicePage, "document.querySelector('[data-expiry=\"3600\"]').click()");
+    const secondPath = path.join(DATA_DIR, 'notes.txt');
+    fs.writeFileSync(secondPath, 'SECOND-MARKER-77');
+    const { root: secondRoot } = await alice.send('DOM.getDocument', {}, alicePage);
+    const { nodeId: secondNode } = await alice.send(
+      'DOM.querySelector',
+      { nodeId: secondRoot.nodeId, selector: '#file' },
+      alicePage
+    );
+    await alice.send('DOM.setFileInputFiles', { files: [secondPath], nodeId: secondNode }, alicePage);
+    await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        const select = document.getElementById('recipient');
+        select.value = 'bob';
+        select.dispatchEvent(new Event('change'));
+        document.getElementById('share').click();
+        return true;
+      })()`
+    );
+    await waitFor(
+      alice,
+      alicePage,
+      "document.getElementById('count-sent').textContent === '2'",
+      'the second file was sent'
+    );
+    const secondCard = await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        const card = [...document.querySelectorAll('#cards .card-file')].find((c) => c.textContent.includes('notes.txt'));
+        return card ? card.textContent : '';
+      })()`
+    );
+    assert.ok(
+      /expires in \d+ (min|h|days)/.test(secondCard),
+      'the card shows the self-destruct timer'
+    );
+    assert.ok(secondCard.includes('view only'), 'the card shows the permission the sender chose');
+    console.log('PASS  the card carries the permission and the self-destruct timer');
+
+    // The sender calls it off before the recipient opens it.
+    await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        const card = [...document.querySelectorAll('#cards .card-file')].find((c) => c.textContent.includes('notes.txt'));
+        [...card.querySelectorAll('button')].find((b) => b.textContent === 'Revoke').click();
+        return true;
+      })()`
+    );
+    await waitFor(alice, alicePage, "!!document.querySelector('#cards .badge--dead')", 'the revoked badge');
+    const activity = await evaluate(
+      alice,
+      alicePage,
+      `(() => ({
+        text: document.getElementById('activity').textContent,
+        events: document.querySelectorAll('#activity .activity__item').length,
+      }))()`
+    );
+    assert.ok(activity.text.includes('sent'), 'the activity panel records the send');
+    assert.ok(activity.events >= 2, 'the activity panel lists both sends');
+    console.log('PASS  the sender revoked the file and the activity panel records what happened');
+
     // Bob receives and decrypts.
     await evaluate(bob, bobPage, 'refresh()');
-    await waitFor(bob, bobPage, "document.querySelectorAll('#cards .card-file').length === 1", 'bob sees one file');
+    await waitFor(bob, bobPage, "document.querySelectorAll('#cards .card-file').length === 2", 'bob sees two files');
     const bobStats = await evaluate(
       bob,
       bobPage,
-      `(() => ({
-        inbox: document.getElementById('count-inbox').textContent,
-        unread: document.querySelectorAll('.card-file--unread').length,
-        title: document.getElementById('view-title').textContent,
-      }))()`
+      `(() => {
+        const cards = [...document.querySelectorAll('#cards .card-file')];
+        const dead = cards.find((c) => c.textContent.includes('revoked'));
+        const deadButton = dead ? [...dead.querySelectorAll('button')].find((b) => b.textContent === 'Decrypt') : null;
+        return {
+          inbox: document.getElementById('count-inbox').textContent,
+          unread: document.querySelectorAll('.card-file--unread').length,
+          title: document.getElementById('view-title').textContent,
+          revoked: !!dead,
+          revokedDisabled: deadButton ? deadButton.disabled : null,
+        };
+      })()`
     );
-    assert.strictEqual(bobStats.inbox, '1', 'the recipient dashboard counts the incoming share');
-    assert.strictEqual(bobStats.unread, 1, 'an unopened share is marked unread');
+    assert.strictEqual(bobStats.inbox, '2', 'the recipient dashboard counts the incoming shares');
+    assert.strictEqual(bobStats.unread, 2, 'both shares are marked unread');
     assert.strictEqual(bobStats.title, 'Shared with me', 'the recipient lands on the inbox view');
-    console.log('PASS  the recipient dashboard shows the incoming share as unread');
+    assert.ok(bobStats.revoked, 'the recipient sees that one share was revoked');
+    assert.strictEqual(bobStats.revokedDisabled, true, 'a revoked share cannot be opened');
+    console.log('PASS  the recipient dashboard shows the incoming shares, one of them revoked');
     await shoot(bob, bobPage, '04-inbox.png');
     await evaluate(
       bob,
@@ -312,7 +392,8 @@ async function signUp(cdp, sessionId, username) {
         window.__captured = null;
         const original = URL.createObjectURL.bind(URL);
         URL.createObjectURL = (blob) => { window.__captured = blob; return original(blob); };
-        document.querySelector('#cards .card-file__foot button').click();
+        const card = [...document.querySelectorAll('#cards .card-file')].find((c) => c.textContent.includes('syllabus.pdf'));
+        [...card.querySelectorAll('button')].find((b) => b.textContent === 'Decrypt').click();
         return true;
       })()`
     );
@@ -331,7 +412,24 @@ async function signUp(cdp, sessionId, username) {
       Buffer.from(decoded, 'base64').toString('utf8').includes(MARKER),
       'bob must get the original file back'
     );
-    console.log('PASS  recipient decrypted in the browser to the original bytes');
+    const afterOpen = await evaluate(
+      bob,
+      bobPage,
+      `(() => {
+        const card = [...document.querySelectorAll('#cards .card-file')].find((c) => c.textContent.includes('syllabus.pdf'));
+        return {
+          verified: !!card.querySelector('.badge--good'),
+          badge: card.querySelector('.badge--good') ? card.querySelector('.badge--good').textContent : '',
+          status: document.getElementById('main-status').textContent,
+          activity: document.getElementById('activity').textContent,
+        };
+      })()`
+    );
+    assert.ok(afterOpen.verified, 'the card shows that the file was verified against the sender fingerprint');
+    assert.strictEqual(afterOpen.badge, 'verified');
+    assert.ok(afterOpen.status.includes('Verified'), 'the interface says the file was verified');
+    assert.ok(afterOpen.activity.includes('opened'), 'the activity panel records the open');
+    console.log('PASS  recipient decrypted in the browser, verified against the sender fingerprint');
     await shoot(bob, bobPage, '05-decrypted.png');
 
     console.log('\nALL BROWSER CHECKS PASSED');

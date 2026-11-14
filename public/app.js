@@ -9,15 +9,21 @@ const RSA = {
   hash: 'SHA-256',
 };
 
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+
 let me = null;
 let myKeys = null;
 let users = [];
 let pendingUser = null;
 let permission = 'view';
+let expiry = 0;
 let lastEvidence = null;
 let view = 'inbox';
 let query = '';
 let shares = { inbox: [], sent: [] };
+// The integrity result of each file this browser has decrypted, so the card can
+// show that the bytes that arrived are the bytes that were sent.
+const integrity = new Map();
 
 /* ---------------- base64 ---------------- */
 
@@ -36,6 +42,11 @@ function fromB64(b64) {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
+}
+
+async function sha256Hex(bytes) {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /* ---------------- key storage (IndexedDB) ---------------- */
@@ -101,6 +112,31 @@ async function api(path, options = {}) {
   return data;
 }
 
+// fetch cannot report upload progress, so the one call that sends a file body
+// goes over XMLHttpRequest instead.
+function apiUpload(path, body, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', path);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
+    };
+    xhr.onload = () => {
+      let data = {};
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+      } catch {
+        data = {};
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new Error(data.error || xhr.statusText));
+    };
+    xhr.onerror = () => reject(new Error('the upload did not reach the server'));
+    xhr.send(JSON.stringify(body));
+  });
+}
+
 /* ---------------- auth ---------------- */
 
 function showApp() {
@@ -118,8 +154,10 @@ async function signIn(username, password) {
   showApp();
   await refresh();
   if (!myKeys) {
-    $('share-status').textContent =
-      'No key pair on this device for this account, so files sent to you cannot be decrypted here.';
+    setMainStatus(
+      'No key pair on this device for this account, so files sent to you cannot be decrypted here.',
+      'error'
+    );
   }
 }
 
@@ -204,6 +242,16 @@ $('logout').addEventListener('click', async () => {
   location.reload();
 });
 
+$('logout-all').addEventListener('click', async () => {
+  try {
+    const result = await api('/api/logout-all', { method: 'POST' });
+    setMainStatus(`Signed out of ${result.ended} session(s) on every device.`, 'ok');
+    setTimeout(() => location.reload(), 1200);
+  } catch (err) {
+    setMainStatus(err.message, 'error');
+  }
+});
+
 /* ---------------- google sign-in ---------------- */
 
 async function initGoogleSignIn() {
@@ -258,8 +306,10 @@ async function onGoogleCredential(response) {
     showApp();
     await refresh();
     if (!myKeys) {
-      $('share-status').textContent =
-        'This account was first used on another device, so this device holds no private key for it. Files sent to you cannot be decrypted here.';
+      setMainStatus(
+        'This account was first used on another device, so this device holds no private key for it. Files sent to you cannot be decrypted here.',
+        'error'
+      );
     }
   } catch (err) {
     $('auth-error').textContent = err.message;
@@ -268,12 +318,21 @@ async function onGoogleCredential(response) {
 
 initGoogleSignIn();
 
-/* ---------------- permission ---------------- */
+/* ---------------- permission and expiry ---------------- */
 
 for (const cell of document.querySelectorAll('[data-permission]')) {
   cell.addEventListener('click', () => {
     permission = cell.dataset.permission;
     for (const other of document.querySelectorAll('[data-permission]')) {
+      other.setAttribute('aria-pressed', String(other === cell));
+    }
+  });
+}
+
+for (const cell of document.querySelectorAll('[data-expiry]')) {
+  cell.addEventListener('click', () => {
+    expiry = Number(cell.dataset.expiry);
+    for (const other of document.querySelectorAll('[data-expiry]')) {
       other.setAttribute('aria-pressed', String(other === cell));
     }
   });
@@ -291,6 +350,12 @@ const VIEWS = {
   },
 };
 
+function setMainStatus(message, kind) {
+  const status = $('main-status');
+  status.textContent = message || '';
+  status.className = `status main__status${kind ? ` status--${kind}` : ''}`;
+}
+
 async function refresh() {
   const list = await api('/api/users');
   users = list.users;
@@ -306,9 +371,52 @@ async function refresh() {
   }
   await showRecipientKey();
 
-  const loaded = await api('/api/shares');
-  shares = loaded;
+  shares = await api('/api/shares');
+  await renderActivity();
   render();
+}
+
+async function renderActivity() {
+  const list = $('activity');
+  list.innerHTML = '';
+  let events = [];
+  try {
+    events = (await api('/api/activity')).activity;
+  } catch (err) {
+    return;
+  }
+  try {
+    const chain = await api('/api/activity/verify');
+    $('trail-state').textContent = chain.intact
+      ? `The trail is tamper-evident: ${chain.entries} entries, each one carrying the hash of the one before it, and the chain still checks out.`
+      : `The trail does not check out: entry ${chain.brokenAt + 1} has been altered.`;
+  } catch (err) {
+    $('trail-state').textContent = 'The trail could not be checked.';
+  }
+  if (!events.length) {
+    const empty = document.createElement('li');
+    empty.className = 'activity__empty';
+    empty.textContent = 'Nothing has happened yet.';
+    list.appendChild(empty);
+    return;
+  }
+  const verbs = { sent: 'sent', opened: 'opened', revoked: 'revoked', registered: 'registered' };
+  for (const event of events.slice(0, 12)) {
+    const item = document.createElement('li');
+    item.className = 'activity__item';
+    const what = document.createElement('span');
+    what.className = 'activity__what';
+    const who = document.createElement('span');
+    who.className = 'activity__who';
+    const when = document.createElement('span');
+    when.className = 'activity__when';
+
+    what.textContent = `${verbs[event.type] || event.type} ${event.filename || ''}`.trim();
+    who.textContent = event.type === 'sent' ? `${event.actor} to ${event.with}` : `${event.actor}`;
+    when.textContent = new Date(event.ts).toLocaleString();
+    item.append(what, who, when);
+    list.appendChild(item);
+  }
 }
 
 function render() {
@@ -345,6 +453,16 @@ function render() {
   $('view-meta').textContent =
     `${files.length} file${files.length === 1 ? '' : 's'}` + (unread ? `, ${unread} unopened` : '');
   renderCards(files, current.direction);
+}
+
+function expiryLabel(share) {
+  if (!share.expiresAt) return null;
+  const left = share.expiresAt - Date.now();
+  if (left <= 0) return 'expired';
+  const hours = left / 3600000;
+  if (hours < 1) return `expires in ${Math.max(1, Math.round(left / 60000))} min`;
+  if (hours < 48) return `expires in ${Math.round(hours)} h`;
+  return `expires in ${Math.round(hours / 24)} days`;
 }
 
 function renderCards(files, direction) {
@@ -392,21 +510,95 @@ function renderCards(files, direction) {
     when.textContent = new Date(file.createdAt).toLocaleString();
     meta.append(who, size, when);
 
-    const foot = document.createElement('div');
-    foot.className = 'card-file__foot';
+    const badges = document.createElement('div');
+    badges.className = 'card-file__badges';
     const access = document.createElement('span');
     access.className = 'badge';
     access.textContent = file.permission === 'view' ? 'view only' : 'view and download';
-    foot.appendChild(access);
-    const button = document.createElement('button');
-    button.className = 'btn btn--small';
-    button.type = 'button';
-    button.textContent = directionKey === 'from' ? 'Decrypt' : 'Details';
-    button.addEventListener('click', () => (directionKey === 'from' ? openShare(file.id) : showSent(file.id)));
-    foot.appendChild(button);
+    badges.appendChild(access);
+    const life = expiryLabel(file);
+    if (life) {
+      const badge = document.createElement('span');
+      badge.className = 'badge badge--quiet';
+      badge.textContent = life;
+      badges.appendChild(badge);
+    }
+    if (file.state && file.state !== 'live') {
+      const badge = document.createElement('span');
+      badge.className = 'badge badge--dead';
+      badge.textContent = file.state;
+      badges.appendChild(badge);
+    }
+    if (file.openedAt) {
+      const badge = document.createElement('span');
+      badge.className = 'badge badge--quiet';
+      badge.textContent = 'opened';
+      badges.appendChild(badge);
+    }
+    const check = integrity.get(file.id);
+    if (check) {
+      const badge = document.createElement('span');
+      badge.className = check === 'verified' ? 'badge badge--good' : 'badge badge--dead';
+      badge.textContent = check === 'verified' ? 'verified' : 'changed';
+      badges.appendChild(badge);
+    }
 
-    card.append(top, meta, foot);
+    const foot = document.createElement('div');
+    foot.className = 'card-file__foot';
+    const key = document.createElement('button');
+    key.className = 'key-chip';
+    key.type = 'button';
+    key.textContent = 'key ...';
+    key.title = 'Copy the key fingerprint this file is encrypted to';
+    key.addEventListener('click', () => copyKeyFor(file, directionKey, key));
+    foot.appendChild(key);
+
+    const actions = document.createElement('div');
+    actions.className = 'card-file__actions';
+    if (directionKey === 'from') {
+      const open = document.createElement('button');
+      open.className = 'btn btn--small';
+      open.type = 'button';
+      open.textContent = 'Decrypt';
+      open.disabled = file.state !== 'live';
+      open.addEventListener('click', () => openShare(file.id));
+      actions.appendChild(open);
+    } else {
+      const details = document.createElement('button');
+      details.className = 'btn btn--small';
+      details.type = 'button';
+      details.textContent = 'Details';
+      details.addEventListener('click', () => showSent(file.id));
+      actions.appendChild(details);
+      const revoke = document.createElement('button');
+      revoke.className = 'btn btn--small';
+      revoke.type = 'button';
+      revoke.textContent = 'Revoke';
+      revoke.disabled = file.state !== 'live' || Boolean(file.openedAt);
+      revoke.addEventListener('click', () => revokeShare(file.id));
+      actions.appendChild(revoke);
+    }
+    foot.appendChild(actions);
+
+    card.append(top, meta, badges, foot);
     container.appendChild(card);
+  }
+}
+
+async function copyKeyFor(file, directionKey, chip) {
+  const other = directionKey === 'from' ? me : file.to;
+  const user = users.find((u) => u.username === other);
+  if (!user) {
+    setMainStatus('No public key is on file for that account.', 'error');
+    return;
+  }
+  const print = await fingerprint(user.publicKey);
+  chip.textContent = `key ${print}`;
+  try {
+    await navigator.clipboard.writeText(print);
+    setMainStatus(`Key fingerprint copied: ${print}`, 'ok');
+  } catch (err) {
+    setMainStatus(`Key fingerprint: ${print}`, 'ok');
   }
 }
 
@@ -452,7 +644,57 @@ async function showRecipientKey() {
 
 $('recipient').addEventListener('change', showRecipientKey);
 
+/* ---------------- the file picker ---------------- */
+
+function describeFile(file) {
+  if (!file) {
+    $('file-note').textContent = 'Drop a file here or choose one. Up to 25 MB.';
+    return;
+  }
+  $('file-note').textContent = `${file.name} - ${formatSize(file.size)}`;
+}
+
+$('file').addEventListener('change', (event) => describeFile(event.target.files[0]));
+
+$('drop').addEventListener('dragover', (event) => {
+  event.preventDefault();
+  $('drop').classList.add('drop--over');
+});
+
+$('drop').addEventListener('dragleave', () => $('drop').classList.remove('drop--over'));
+
+$('drop').addEventListener('drop', (event) => {
+  event.preventDefault();
+  $('drop').classList.remove('drop--over');
+  const file = event.dataTransfer.files[0];
+  if (!file) return;
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  $('file').files = transfer.files;
+  describeFile(file);
+});
+
+/* ---------------- progress ---------------- */
+
+function progress(percent, label) {
+  $('progress').classList.remove('hidden');
+  $('progress-bar').style.width = `${percent}%`;
+  $('progress-label').textContent = label;
+}
+
+function progressDone() {
+  $('progress').classList.add('hidden');
+  $('progress-bar').style.width = '0%';
+}
+
 /* ---------------- share ---------------- */
+
+function expiryText(seconds) {
+  if (seconds >= 604800) return '7 days';
+  if (seconds >= 86400) return '1 day';
+  if (seconds >= 3600) return '1 hour';
+  return `${seconds} seconds`;
+}
 
 $('share').addEventListener('click', async () => {
   const file = $('file').files[0];
@@ -462,6 +704,10 @@ $('share').addEventListener('click', async () => {
   status.className = 'status';
   if (!file) {
     status.textContent = 'Pick a file first.';
+    return;
+  }
+  if (file.size > MAX_FILE_BYTES) {
+    status.textContent = `That file is ${formatSize(file.size)}. The limit is 25 MB.`;
     return;
   }
   if (!recipient) {
@@ -477,39 +723,55 @@ $('share').addEventListener('click', async () => {
   const button = $('share');
   button.disabled = true;
   try {
-    const originalBytes = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+    progress(5, 'Reading the file');
+    const plain = await file.arrayBuffer();
+    const originalBytes = new Uint8Array(plain.slice(0, 16));
     const originalHead = [...originalBytes].map((byte) => byte.toString(16).padStart(2, '0')).join(' ');
 
+    progress(25, 'Hashing the file');
+    const digest = await sha256Hex(plain);
+
+    progress(40, 'Encrypting in this browser');
     const aes = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aes, await file.arrayBuffer());
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aes, plain);
     const rawAes = await crypto.subtle.exportKey('raw', aes);
     const publicKey = await crypto.subtle.importKey('spki', fromB64(target.publicKey), RSA, false, ['encrypt']);
     const wrappedKey = await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, publicKey, rawAes);
 
-    const share = await api('/api/shares', {
-      method: 'POST',
-      body: {
+    progress(60, 'Sending the ciphertext');
+    const share = await apiUpload(
+      '/api/shares',
+      {
         recipient,
         filename: file.name,
         size: file.size,
         permission,
+        expiresIn: expiry,
+        digest,
         iv: toB64(iv),
         wrappedKey: toB64(wrappedKey),
         ciphertext: toB64(ciphertext),
       },
-    });
+      (percent) => progress(60 + Math.round(percent * 0.4), `Sending the ciphertext, ${percent}%`)
+    );
+    progress(100, 'Sent');
+    progressDone();
+
     status.className = 'status status--ok';
+    const life = expiry ? ` It self-destructs in ${expiryText(expiry)}.` : '';
     status.textContent =
-      permission === 'view'
-        ? `Encrypted and sent to ${recipient}. They can open it, not save it.`
-        : `Encrypted and sent to ${recipient}. They can open and save it.`;
+      `Encrypted and sent to ${recipient}.` +
+      (permission === 'view' ? ' They can open it, not save it.' : ' They can open and save it.') +
+      life;
     $('file').value = '';
+    describeFile(null);
     await refresh();
     await showEvidence(share.id, file.name, originalHead);
     view = 'sent';
     render();
   } catch (err) {
+    progressDone();
     status.className = 'status status--error';
     status.textContent = err.message;
   } finally {
@@ -564,22 +826,36 @@ function formatSize(bytes) {
 }
 
 async function openShare(id) {
-  const status = $('share-status');
-  status.className = 'status';
+  setMainStatus('');
   try {
     if (!myKeys) throw new Error('No key pair on this device for this account.');
     const meta = await api(`/api/shares/${id}`);
+    if (meta.state !== 'live') {
+      throw new Error(
+        meta.state === 'revoked' ? 'the sender revoked this file.' : 'this file has expired.'
+      );
+    }
     const rawAes = await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, myKeys.privateKey, fromB64(meta.wrappedKey));
     const aes = await crypto.subtle.importKey('raw', rawAes, { name: 'AES-GCM' }, false, ['decrypt']);
 
     const res = await fetch(`/api/shares/${id}/blob`);
-    if (!res.ok) throw new Error('could not download the encrypted file');
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      throw new Error(detail.error || 'could not download the encrypted file');
+    }
     const ciphertext = await res.arrayBuffer();
     const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(meta.iv) }, aes, ciphertext);
+
+    // The sender's fingerprint of the plaintext, recomputed here after
+    // decryption: this is the check that crosses the encrypted boundary.
+    const check = await sha256Hex(plaintext);
+    const verified = !meta.digest || check === meta.digest;
+    integrity.set(id, verified ? 'verified' : 'changed');
 
     const blob = new Blob([plaintext], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     markOpened(id);
+    await api(`/api/shares/${id}/opened`, { method: 'POST' }).catch(() => {});
 
     if (meta.permission === 'view') {
       const tab = window.open(url, '_blank');
@@ -590,34 +866,49 @@ async function openShare(id) {
         link.rel = 'noopener';
         link.click();
       }
-      status.className = 'status status--ok';
-      status.textContent = 'Opened in a new tab. The sender marked this file view only, so there is no save button.';
+      setMainStatus(
+        `${verified ? 'Verified against the sender fingerprint.' : 'The fingerprint does not match.'} Opened in a new tab. The sender marked this file view only, so there is no save button.`,
+        verified ? 'ok' : 'error'
+      );
     } else {
       const link = document.createElement('a');
       link.href = url;
       link.download = meta.filename;
       link.click();
-      status.className = 'status status--ok';
-      status.textContent = 'Decrypted and saved to your downloads.';
+      setMainStatus(
+        `${verified ? 'Verified against the sender fingerprint.' : 'The fingerprint does not match.'} Decrypted and saved to your downloads.`,
+        verified ? 'ok' : 'error'
+      );
     }
     URL.revokeObjectURL(url);
     await refresh();
   } catch (err) {
-    status.className = 'status status--error';
-    status.textContent = `Decrypt failed: ${err.message}`;
+    setMainStatus(`Decrypt failed: ${err.message}`, 'error');
   }
 }
 
 async function showSent(id) {
-  const status = $('share-status');
   try {
     const meta = await api(`/api/shares/${id}`);
-    status.className = 'status status--ok';
-    status.textContent =
-      `Sent to ${meta.to}. The server holds ciphertext only, and ${meta.permission === 'view' ? 'the file is marked view only' : 'the file can be saved'}.`;
+    const life = expiryLabel(meta);
+    setMainStatus(
+      `Sent to ${meta.to}. The server holds ciphertext only, and ${meta.permission === 'view' ? 'the file is marked view only' : 'the file can be saved'}.` +
+        (life ? ` It ${life}.` : '') +
+        (meta.openedAt ? ' The recipient opened it.' : ' The recipient has not opened it yet.'),
+      'ok'
+    );
     await showEvidence(meta.id, meta.filename, null);
   } catch (err) {
-    status.className = 'status status--error';
-    status.textContent = err.message;
+    setMainStatus(err.message, 'error');
+  }
+}
+
+async function revokeShare(id) {
+  try {
+    await api(`/api/shares/${id}/revoke`, { method: 'POST' });
+    setMainStatus('Revoked. The server will not hand the file over any more.', 'ok');
+    await refresh();
+  } catch (err) {
+    setMainStatus(`Revoke failed: ${err.message}`, 'error');
   }
 }

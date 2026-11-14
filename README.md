@@ -56,12 +56,33 @@ The tunnel URL rotates and lives only while the machine is on.
    private key is stored on that device and never uploaded.
 2. **Laptop 2**: register as the second user.
 3. **Laptop 1**: click *New*, pick a PDF, choose the recipient, choose view-only or view-and-download,
-   and press *Encrypt and send*. The interface shows the fingerprint of the recipient's public key
-   that the file is encrypted to.
+   choose when the file should self-destruct, and press *Encrypt and send*. The interface shows the
+   fingerprint of the recipient's public key that the file is encrypted to.
 4. **Laptop 2**: the file appears under *Shared with me* with a live mark. Press *Decrypt* and it
-   opens.
+   opens; the card then reads *verified*, because the file's SHA-256 fingerprint is recomputed after
+   decryption and matches the one the sender put on it.
 5. The evidence for the exam: the server's disk holds ciphertext only, and an unrelated user is
    refused with `403`.
+
+## What the interface does
+
+- A **dashboard in the shape of a file drive**: *Shared with me*, *Sent by me* and *Recent* in a
+  left rail with counts, a search box, and a card per file carrying its permission badge, its
+  self-destruct timer and its state.
+- **Google sign-in**, with the identity token verified on the server against Google's published
+  keys. The email one-time code is the offline path and needs no internet.
+- **Self-destruct**: never, one hour, one day or seven days. When the time is up the server gives
+  up the bytes and the card says so.
+- **Revocation**: the sender can call a share off before the recipient opens it.
+- **An end-to-end integrity check**: the sender hashes the plaintext in the browser, and the
+  recipient recomputes that hash after decryption.
+- **An audit trail** whose entries are chained by hash, so an edited entry breaks the chain. The
+  dashboard reports whether the chain still checks out.
+- **Hardening**: a content security policy and the other standard headers on every response, a
+  lockout after repeated failed sign-ins or wrong codes, a password minimum of eight characters,
+  *sign out everywhere*, a 25 MB limit on a file, and a cap on how many files one account holds.
+- **A visible proof**: after a send the interface puts your file's first 16 bytes next to the bytes
+  the server really holds.
 
 ## Showing that the server really holds ciphertext
 
@@ -113,22 +134,31 @@ npm run test:browser  # the real interface in headless Chrome, two profiles
 
 The self-test registers three users, proves an unverified account cannot sign in and a wrong code
 is rejected, encrypts a file for one of them, proves the stored blob contains no plaintext, proves
-the recipient decrypts to the original bytes, and proves a third user is refused with `403`.
+the recipient decrypts to the original bytes, proves a third user is refused with `403`, proves the
+demo access code is required, proves an expired share gives up its bytes, proves the sender can
+revoke while the recipient cannot, proves the audit trail is a hash chain that checks out, proves
+repeated failed sign-ins are locked out, and proves signing out everywhere ends every session. The
+Google test runs a local key server and proves a wrong audience, a wrong issuer, an expired, a
+tampered, a forged and a malformed token are all refused.
 
 The browser test drives the actual interface in two separate Chrome profiles, so cookies and
 IndexedDB are genuinely per user. It asserts that the stored private key is non-extractable, that
-the server's disk holds ciphertext, and that the recipient's browser decrypts back to the original
-bytes. It also captures the screen figures used in the report.
+the server's disk holds ciphertext, that the card carries the permission and the self-destruct
+timer, that a revoked share cannot be opened, and that the recipient's browser decrypts back to
+the original bytes and the card then reads *verified*. It also captures the screen figures used in
+the report.
 
 ## Layout
 
 ```
-server/index.js   HTTP server, API, static files
+server/index.js   HTTP server, API, static files, security headers
 server/store.js   JSON store and ciphertext blobs (data/, gitignored)
 server/crypto.js  password hashing and session tokens
 server/mailer.js  delivery of the one-time code: console by default, free provider optional
+server/google.js  verification of a Google ID token, with node:crypto alone
+server/trail.js   the audit trail as a hash chain
 public/           the site: index.html, app.js, style.css, tokens.css, base.css, fonts/
-test/             self-test and headless browser test
+test/             self-test, Google verification test and headless browser test
 tools/            build-report.js and build-deck.js, which build the deliverables
 docs/             the brief, the figures, the report draft, the agent skills config, the ADRs
 report/           the generated report and slides

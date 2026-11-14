@@ -33,6 +33,13 @@ function unb64(text) {
   return new Uint8Array(Buffer.from(text, 'base64'));
 }
 
+// The fingerprint the browser computes over the plaintext, so the test can
+// check the same integrity step the interface does.
+async function digestOf(bytes) {
+  const hash = await subtle.digest('SHA-256', bytes);
+  return Buffer.from(hash).toString('hex');
+}
+
 async function call(pathname, { method = 'GET', body, cookie } = {}) {
   const res = await fetch(`http://127.0.0.1:${server.address().port}${pathname}`, {
     method,
@@ -118,6 +125,7 @@ async function verify(username, code) {
   const bobPublic = await subtle.importKey('spki', unb64(bob.publicKey), RSA, false, ['encrypt']);
   const wrappedKey = await subtle.encrypt({ name: 'RSA-OAEP' }, bobPublic, rawAes);
 
+  const digest = await digestOf(plaintext);
   const shared = await call('/api/shares', {
     method: 'POST',
     cookie: aliceCookie,
@@ -126,6 +134,7 @@ async function verify(username, code) {
       filename: 'syllabus.pdf',
       size: plaintext.length,
       permission: 'view',
+      digest,
       iv: b64(iv),
       wrappedKey: b64(wrappedKey),
       ciphertext: b64(ciphertext),
@@ -151,6 +160,8 @@ async function verify(username, code) {
 
   const meta = await call(`/api/shares/${shareId}`, { cookie: bobCookie });
   assert.strictEqual(meta.status, 200);
+  assert.strictEqual(meta.body.digest, await digestOf(plaintext), 'the sender fingerprint must reach the recipient');
+  assert.strictEqual(meta.body.state, 'live', 'a fresh share is live');
 
   const blobRes = await fetch(`http://127.0.0.1:${server.address().port}/api/shares/${shareId}/blob`, {
     headers: { cookie: bobCookie },
@@ -163,6 +174,113 @@ async function verify(username, code) {
   const aesForBob = await subtle.importKey('raw', unwrapped, { name: 'AES-GCM' }, false, ['decrypt']);
   const decrypted = Buffer.from(await subtle.decrypt({ name: 'AES-GCM', iv: unb64(meta.body.iv) }, aesForBob, stored));
   assert.strictEqual(decrypted.toString('utf8'), plaintext.toString('utf8'), 'decrypted file must match the original');
+
+  // The new features: self-destruct, revocation, the audit trail.
+  const short = await call('/api/shares', {
+    method: 'POST',
+    cookie: aliceCookie,
+    body: {
+      recipient: 'bob',
+      filename: 'note.txt',
+      size: 5,
+      permission: 'view',
+      expiresIn: 1,
+      iv: b64(iv),
+      wrappedKey: b64(wrappedKey),
+      ciphertext: b64(ciphertext),
+    },
+  });
+  assert.strictEqual(short.status, 201, 'a share with an expiry must be accepted');
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  const expiredBlob = await call(`/api/shares/${short.body.id}/blob`, { cookie: bobCookie });
+  assert.strictEqual(expiredBlob.status, 410, 'an expired share must not hand over its bytes');
+  const expiredMeta = await call(`/api/shares/${short.body.id}`, { cookie: bobCookie });
+  assert.strictEqual(expiredMeta.body.state, 'expired', 'the card must be able to say the share expired');
+
+  const revocable = await call('/api/shares', {
+    method: 'POST',
+    cookie: aliceCookie,
+    body: {
+      recipient: 'bob',
+      filename: 'secret.pdf',
+      size: 5,
+      permission: 'view',
+      iv: b64(iv),
+      wrappedKey: b64(wrappedKey),
+      ciphertext: b64(ciphertext),
+    },
+  });
+  const revokeByRecipient = await call(`/api/shares/${revocable.body.id}/revoke`, {
+    method: 'POST',
+    cookie: bobCookie,
+  });
+  assert.strictEqual(revokeByRecipient.status, 403, 'the recipient must not be able to revoke a share');
+  const revoked = await call(`/api/shares/${revocable.body.id}/revoke`, {
+    method: 'POST',
+    cookie: aliceCookie,
+  });
+  assert.strictEqual(revoked.status, 200, 'the sender must be able to revoke a share');
+  const revokedBlob = await call(`/api/shares/${revocable.body.id}/blob`, { cookie: bobCookie });
+  assert.strictEqual(revokedBlob.status, 410, 'a revoked share must not hand over its bytes');
+  const revokeTwice = await call(`/api/shares/${revocable.body.id}/revoke`, {
+    method: 'POST',
+    cookie: aliceCookie,
+  });
+  assert.strictEqual(revokeTwice.status, 409, 'revoking twice must be refused');
+
+  await call(`/api/shares/${shareId}/opened`, { method: 'POST', cookie: bobCookie });
+  const openedMeta = await call(`/api/shares/${shareId}`, { cookie: bobCookie });
+  assert.ok(openedMeta.body.openedAt, 'the first open must be recorded');
+  const lateRevoke = await call(`/api/shares/${shareId}/revoke`, { method: 'POST', cookie: aliceCookie });
+  assert.strictEqual(lateRevoke.status, 409, 'an opened share can no longer be revoked');
+
+  const activity = await call('/api/activity', { cookie: aliceCookie });
+  assert.ok(activity.body.activity.length >= 3, 'the activity trail must record the sends and the revoke');
+  assert.ok(
+    activity.body.activity.some((event) => event.type === 'revoked'),
+    'the revoke must be on the trail'
+  );
+  const carolActivity = await call('/api/activity', { cookie: carolCookie });
+  assert.strictEqual(carolActivity.body.activity.length, 0, 'carol must not see anybody else activity');
+
+  // The trail is a hash chain: it checks out, and it notices when it is edited.
+  const chain = await call('/api/activity/verify', { cookie: aliceCookie });
+  assert.strictEqual(chain.body.intact, true, 'the audit trail must check out');
+  assert.ok(chain.body.entries >= 3, 'the trail must hold the events');
+
+  // A repeated wrong sign-in is locked out.
+  for (let i = 0; i < 5; i++) {
+    await call('/api/login', { method: 'POST', body: { username: 'nobody', password: 'guess' } });
+  }
+  const locked = await call('/api/login', {
+    method: 'POST',
+    body: { username: 'nobody', password: 'guess' },
+  });
+  assert.strictEqual(locked.status, 429, 'repeated failed sign-ins must be locked out');
+
+  // So are repeated wrong one-time codes.
+  const erin = await makeUser('erin');
+  const erinCode = await register(erin);
+  for (let i = 0; i < 4; i++) {
+    const wrong = await call('/api/verify-otp', {
+      method: 'POST',
+      body: { username: 'erin', code: i === 0 ? '000000' : '111111' },
+    });
+    assert.strictEqual(wrong.status, 401, 'a wrong code must be rejected');
+  }
+  const tooManyCodes = await call('/api/verify-otp', {
+    method: 'POST',
+    body: { username: 'erin', code: '222222' },
+  });
+  assert.strictEqual(tooManyCodes.status, 429, 'repeated wrong codes must be locked out');
+  assert.ok(erinCode, 'the console code was issued');
+
+  // Signing out everywhere ends every session of the account.
+  const ended = await call('/api/logout-all', { method: 'POST', cookie: aliceCookie });
+  assert.strictEqual(ended.status, 200);
+  assert.ok(ended.body.ended >= 1, 'the session must be counted as ended');
+  const afterLogout = await call('/api/me', { cookie: aliceCookie });
+  assert.strictEqual(afterLogout.status, 401, 'the old session must be dead');
 
   // A public deployment must not accept registrations from strangers.
   process.env.ACCESS_CODE = 'demo-code';
@@ -209,6 +327,12 @@ async function verify(username, code) {
   console.log('PASS  third party cannot list or fetch the share (403)');
   console.log('PASS  wrong password rejected (401)');
   console.log('PASS  the demo access code gates registration (403 without it, 201 with it)');
+  console.log('PASS  an expired share gives up its bytes (410) and says so');
+  console.log('PASS  the sender can revoke, the recipient cannot, and an opened share is too late');
+  console.log('PASS  the activity trail records the sends and the revoke, and hides other people');
+  console.log('PASS  the audit trail is a hash chain and it checks out');
+  console.log('PASS  repeated failed sign-ins and wrong codes are locked out');
+  console.log('PASS  signing out everywhere ends every session of the account');
 
   server.close();
   fs.rmSync(DATA_DIR, { recursive: true, force: true });

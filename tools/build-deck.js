@@ -115,40 +115,68 @@ function table(slide, rows, x, y, w, colWidths, fontSize) {
 
 /* ---------------- 1. title ---------------- */
 {
-  const slide = inkSlide();
-  slide.addShape(pptx.ShapeType.rect, { x: 0.9, y: 1.25, w: 0.26, h: 0.26, fill: { color: ACCENT } });
-  slide.addText('REVIEW - 3', {
-    x: 1.3, y: 1.12, w: 6, h: 0.5,
-    fontFace: FONT, fontSize: 20, bold: true, color: PAPER, margin: 0, valign: 'middle',
+  const SERIF = 'Times New Roman';
+  const BLACK = '000000';
+  const slide = pptx.addSlide();
+  slide.background = { color: 'FFFFFF' };
+
+  slide.addText('21ECC402P – COMPUTER COMMUNICATION AND NETWORK\nSECURITY', {
+    x: 1.4, y: 0.35, w: 9.9, h: 0.95,
+    fontFace: SERIF, fontSize: 21, bold: true, color: BLACK,
+    align: 'center', valign: 'top', lineSpacingMultiple: 1.2, margin: 0,
   });
-  slide.addText('SECURE FILE SHARING SYSTEM', {
-    x: 0.9, y: 2.05, w: 11.5, h: 0.75,
-    fontFace: FONT, fontSize: 34, bold: true, color: PAPER, margin: 0, charSpacing: -0.6,
+
+  slide.addImage({
+    path: path.join(ROOT, 'docs', 'brand', 'srm-logo.jpeg'),
+    x: 11.48, y: 0.14, w: 1.7, h: 0.77,
   });
-  slide.addText('USING END-TO-END ENCRYPTION AND ACCESS CONTROL', {
-    x: 0.9, y: 2.75, w: 11.5, h: 0.75,
-    fontFace: FONT, fontSize: 34, bold: true, color: PAPER, margin: 0, charSpacing: -0.6,
+
+  slide.addText([{ text: 'REVIEW - 3', options: { underline: true } }], {
+    x: 0.75, y: 1.7, w: W - 1.5, h: 0.6,
+    fontFace: SERIF, fontSize: 26, bold: true, color: BLACK,
+    align: 'center', valign: 'middle', margin: 0,
   });
-  slide.addText('21ECC402P  COMPUTER COMMUNICATION AND NETWORK SECURITY', {
-    x: 0.9, y: 3.85, w: 11.5, h: 0.4,
-    fontFace: FONT, fontSize: 14, color: PAPER2, margin: 0,
+
+  slide.addText(
+    [
+      { text: 'SECURE FILE SHARING SYSTEM USING END-TO-END\n', options: { underline: true } },
+      { text: 'ENCRYPTION AND ACCESS CONTROL', options: { underline: true } },
+    ],
+    {
+      x: 0.75, y: 2.65, w: W - 1.5, h: 1.2,
+      fontFace: SERIF, fontSize: 26, bold: true, color: BLACK,
+      align: 'center', valign: 'middle', lineSpacingMultiple: 1.2, margin: 0,
+    }
+  );
+
+  slide.addText('By', {
+    x: 0.75, y: 4.3, w: W - 1.5, h: 0.45,
+    fontFace: SERIF, fontSize: 18, italic: true, color: BLACK,
+    align: 'center', valign: 'middle', margin: 0,
   });
+
   const team = [
-    '1. PRADEESH M   - RA2311004010278',
-    '2. VARUN P R    - RA2311004010287',
-    '3. SUGANDHAN A  - RA2311004010297',
+    ['1. PRADEESH M', '-RA2311004010278'],
+    ['2. VARUN P R', '-RA2311004010287'],
+    ['3. SUGANDHAN A', '-RA2311004010297'],
   ];
-  team.forEach((line, index) => {
-    slide.addText(line, {
-      x: 0.9, y: 4.75 + index * 0.42, w: 7, h: 0.38,
-      fontFace: FONT, fontSize: 14, color: PAPER, margin: 0,
+  team.forEach(([name, reg], index) => {
+    const y = 5.0 + index * 0.48;
+    slide.addText(name, {
+      x: 1.4, y, w: 6.0, h: 0.44,
+      fontFace: SERIF, fontSize: 22, color: BLACK, margin: 0, valign: 'middle',
+    });
+    slide.addText(reg, {
+      x: 7.75, y, w: 4.2, h: 0.44,
+      fontFace: SERIF, fontSize: 22, color: BLACK, margin: 0, valign: 'middle',
     });
   });
-  slide.addShape(pptx.ShapeType.rect, { x: 9.4, y: 4.55, w: 3.05, h: 1.55, fill: { color: PAPER } });
-  slide.addText('SYSTEM NAME', { x: 9.6, y: 4.7, w: 2.7, h: 0.3, fontFace: FONT, fontSize: 10, color: MUTED, margin: 0 });
-  slide.addText('SecureShare', { x: 9.6, y: 4.98, w: 2.7, h: 0.5, fontFace: FONT, fontSize: 22, bold: true, color: INK, margin: 0 });
-  slide.addText('A working prototype on localhost', { x: 9.6, y: 5.48, w: 2.7, h: 0.4, fontFace: FONT, fontSize: 10, color: MUTED, margin: 0 });
-  slide.addText('November 2026', { x: 0.9, y: 6.5, w: 5, h: 0.35, fontFace: FONT, fontSize: 12, color: MUTED, margin: 0 });
+
+  slide.addText('1', {
+    x: 11.5, y: 7.0, w: 0.85, h: 0.32,
+    fontFace: SERIF, fontSize: 12, bold: true, color: BLACK,
+    align: 'right', valign: 'bottom', margin: 0,
+  });
 }
 
 /* ---------------- 2. outline ---------------- */
@@ -222,15 +250,16 @@ function table(slide, rows, x, y, w, colWidths, fontSize) {
       'SecureShare is a web system for handing a file to one person while keeping it unreadable to everyone else, including the storage server.',
       'At registration the browser generates an RSA-OAEP 2048-bit key pair; the private key is non-extractable and stays in IndexedDB.',
       'Each share gets a fresh AES-GCM 256-bit key and a random 96-bit IV; the file key is wrapped with the recipient’s public key.',
-      'Authentication uses a username, an email address and a password, with the account unusable until a six-digit one-time code is verified.',
+      'Authentication is a Google sign-in verified on the server against Google’s published keys, with an email one-time code as the offline path.',
+      'The sender sets the permission and a self-destruct timer, and can call the share off before it is opened.',
       'The implementation uses only Node.js built-in modules and vanilla browser JavaScript, so it installs nothing and costs nothing to run.',
     ],
     { x: 0.9, y: 1.8, w: 7.6, h: 4.6, fontSize: 13 }
   );
   slide.addImage({ path: path.join(SHOTS, '04-inbox.png'), x: 8.75, y: 1.85, w: 3.85, h: 2.71 });
-  caption(slide, 'The recipient’s board: a share that has not been opened yet carries the live mark.', 8.75, 4.62, 3.85);
+  caption(slide, 'The recipient’s dashboard: a share that has not been opened yet carries the live mark.', 8.75, 4.62, 3.85);
   slide.addShape(pptx.ShapeType.rect, { x: 8.75, y: 5.25, w: 3.85, h: 1.35, fill: { color: INK } });
-  slide.addText('Verified in two layers: a Node self-test of the server contract, and a headless Chrome test that drives the real interface in two separate browser profiles.', {
+  slide.addText('Verified in two layers: 18 checks in the Node suite and 9 checks in a headless Chrome test that drives the real interface in two separate browser profiles.', {
     x: 8.95, y: 5.42, w: 3.45, h: 1.05,
     fontFace: FONT, fontSize: 11, color: PAPER, margin: 0, lineSpacingMultiple: 1.15,
   });
@@ -281,6 +310,7 @@ for (let slideIndex = 0; slideIndex < 3; slideIndex += 1) {
       'To implement user authentication and sender-controlled access control for secure file access.',
       'To integrate end-to-end encryption so that the storage server cannot read the original content.',
       'To implement secure key management so that private keys never leave the user’s device.',
+      'To add a self-destruct timer, revocation, an end-to-end integrity check and an audit trail.',
       'To validate the main workflows of the prototype, including the unauthorised-access scenario.',
     ],
     { x: 0.9, y: 1.85, w: 7.5, h: 3.9, fontSize: 14 }
@@ -340,7 +370,33 @@ for (const [file, title, cap] of modelSlides) {
   });
 }
 
-/* ---------------- 13. tools used ---------------- */
+/* ---------------- 13. what the prototype now does ---------------- */
+{
+  const slide = paperSlide();
+  slideTitle(slide, 'What the prototype now does');
+  bullets(
+    slide,
+    [
+      'A dashboard in the shape of a file drive: shared with me, sent by me, recent, a search box and a card per file.',
+      'Google sign-in, with the identity token verified on the server against Google’s published keys.',
+      'A self-destruct timer on every share; when the time is up the server gives up the bytes.',
+      'Revocation: the sender can call a share off before the recipient opens it.',
+      'An end-to-end integrity check: the sender’s SHA-256 fingerprint of the file, recomputed after decryption.',
+      'An audit trail whose entries are chained by hash, so an edited entry breaks the chain.',
+      'Hardening: a content security policy, a lockout after repeated failed sign-ins, and sign-out everywhere.',
+    ],
+    { x: 0.9, y: 1.8, w: 7.3, h: 4.7, fontSize: 13 }
+  );
+  slide.addImage({ path: path.join(SHOTS, '03-sent.png'), x: 8.6, y: 1.85, w: 3.95, h: 2.52 });
+  caption(slide, 'After a send: the file’s own first bytes next to the bytes the server holds.', 8.6, 4.45, 3.95);
+  slide.addShape(pptx.ShapeType.rect, { x: 8.6, y: 5.05, w: 3.95, h: 1.55, fill: { color: INK } });
+  slide.addText('The two byte strings are never the same. That is the proof, on screen, that the server stores ciphertext and not the file.', {
+    x: 8.8, y: 5.25, w: 3.55, h: 1.2,
+    fontFace: FONT, fontSize: 11, color: PAPER, margin: 0, lineSpacingMultiple: 1.2,
+  });
+}
+
+/* ---------------- 14. tools used ---------------- */
 {
   const slide = paperSlide();
   slideTitle(slide, 'Tools used');
@@ -348,11 +404,12 @@ for (const [file, title, cap] of modelSlides) {
     slide,
     [
       ['Software / technology', 'Purpose'],
-      ['Node.js node:http and node:crypto', 'Server, password hashing and session tokens; no framework and no package'],
-      ['Web Cryptography API', 'RSA-OAEP key pairs, AES-GCM encryption, in the browser'],
+      ['Node.js node:http and node:crypto', 'Server, password hashing, session tokens and the hash-chained audit trail; no framework and no package'],
+      ['Web Cryptography API', 'RSA-OAEP key pairs, AES-GCM encryption and SHA-256 fingerprints, in the browser'],
+      ['Google Identity Services and the JWKS', 'Sign-in by Google; the identity token is verified on the server with node:crypto'],
       ['IndexedDB', 'Non-extractable private key, stored on the user’s own device'],
       ['JSON store and blob directory', 'Accounts, share metadata and ciphertext on disk'],
-      ['Vanilla JavaScript front end', 'Register, verify, send, open; no build step'],
+      ['Vanilla JavaScript front end', 'Register, verify, send, open; a dashboard, no build step'],
       ['Headless Chrome over the DevTools protocol', 'Automated verification of the real interface in two profiles'],
       ['Git and GitHub', 'Version control and the public repository'],
     ],

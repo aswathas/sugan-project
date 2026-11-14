@@ -37,6 +37,9 @@ completely free: no paid service, no package to install.
 | R16 | He must be able to show his faculty that the file is stored as ciphertext, not plain text | Sugan, ts 1794647373 | built: the in-app evidence panel, `data/blobs/<id>.bin`, `npm run show:ciphertext` |
 | R17 | A Google Drive style dashboard for the signed-in screen | Aswath's instruction | built |
 | R18 | A live public link for the demo | Aswath's instruction, on Sugan's "show demo using the site deployed" | live over a tunnel, plus `render.yaml` for a permanent URL |
+| R19 | More features in the app: more scope, planned and added | Aswath's instruction | built: self-destruct timer, revocation, end-to-end integrity check, tamper-evident audit trail, upload progress, drag and drop, a file-size limit, security headers, lockouts, sign-out everywhere |
+| R20 | Google OAuth set up for real, not only designed | Aswath's instruction, and Sugan offering to authorise | done: project `secureshare-e2ee-2026`, client id issued, the button is live on the site |
+| R21 | The report and the slides must be exactly the format he sent, with the SRM logo | Sugan | done: the logo was extracted from his own reference deck and the title page and the first slide now carry it |
 
 ## 3. What was built
 
@@ -82,6 +85,27 @@ blueprint for the public link.
 ### Phase 8 — The faculty proof (done)
 After a send, the app shows the sender's first 16 bytes next to the bytes the server really holds,
 and names the file on disk. `npm run show:ciphertext` prints the same thing in the terminal.
+
+### Phase 9 — The scope grew (done)
+Asked to widen the scope, four features went into the application that a reviewer of a secure file
+sharing system asks about first, plus the hardening to go with them:
+
+1. **Self-destruct.** The sender picks never, one hour, one day or seven days. When the time is up
+   the server refuses to hand over the bytes and the card says the share expired.
+2. **Revocation.** The sender can call a share off before the recipient opens it. The recipient
+   cannot, and an already opened share can no longer be revoked.
+3. **An end-to-end integrity check.** The sender hashes the plaintext with SHA-256 in the browser;
+   the recipient recomputes it after decryption and the card reads *verified*.
+4. **An audit trail that is tamper-evident.** Each entry carries the hash of the entry before it,
+   and the interface reports whether the chain still checks out.
+5. **Hardening.** Security headers on every response, a lockout after repeated failed sign-ins or
+   wrong codes, a password minimum of eight, sign-out everywhere, a 25 MB file limit and a cap on
+   how many files an account may hold.
+
+### Phase 10 — The Google client id (done)
+Google Cloud project `secureshare-e2ee-2026`, one web OAuth client, `http://localhost:3000` as the
+authorised JavaScript origin. The server uses only the client id: the identity token is verified
+with Google's published keys, so the client secret is never needed and is not stored anywhere.
 
 ## 4. What the demo looks like
 
