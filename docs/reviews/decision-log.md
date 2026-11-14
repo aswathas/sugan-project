@@ -336,3 +336,26 @@
 - Consequence: the scene reads as a pencil drawing of a machine, the story of the file is one
   arrow that draws itself, and a person who signs in on a device without the key is told what to
   do instead of being shown a broken workspace.
+
+## D22 - The report told a story the code had stopped telling
+
+- Prompt: "after testing everything and push to render and tell me how to view the backend working
+  in render app make pdf and send to sugan".
+- Decision: the report was rebuilt against the code before it was sent, because the code had moved
+  since it was written. Two claims were no longer true and were corrected at the source: the
+  results chapter said the second factor could be turned off, and it cannot; and it said a valid
+  Google token signs the user in, when it now holds the sign-in open for the authenticator code and
+  grants no session until the code arrives. Two cases were added for what the new build does, that
+  signing out ends the session on one click with no code, and that the second factor has no switch
+  in the page and no route on the server. The counts in the conclusion were brought back to what
+  the suites actually print: twenty-three in the Node layer and thirty-two in the browser layer.
+  The slides were rebuilt from the same content and validated. The files were sent to Sugan once
+  each, with the older copies in the chat revoked first.
+- Alternatives considered: (a) send the report as it stood, which would have shipped a document
+  that describes a factor you can switch off and a Google sign-in that needs no code; (b) rewrite
+  the results chapter around the new features, which is more prose than the change needs; (c) the
+  incumbent rows, corrected in place.
+- Evidence: the rebuilt PDF was read page by page at the three pages that changed, and the new
+  rows and sentences are there; the deck passes the office validator; the report and the deck are
+  the versions that were sent.
+- Consequence: what Sugan reads describes the build that is live.
