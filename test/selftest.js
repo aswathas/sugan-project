@@ -125,6 +125,7 @@ async function verify(username, code) {
       recipient: 'bob',
       filename: 'syllabus.pdf',
       size: plaintext.length,
+      permission: 'view',
       iv: b64(iv),
       wrappedKey: b64(wrappedKey),
       ciphertext: b64(ciphertext),
@@ -140,6 +141,7 @@ async function verify(username, code) {
   const bobShares = await call('/api/shares', { cookie: bobCookie });
   assert.strictEqual(bobShares.body.inbox.length, 1, 'bob should see one received share');
   assert.strictEqual(bobShares.body.inbox[0].filename, 'syllabus.pdf');
+  assert.strictEqual(bobShares.body.inbox[0].permission, 'view', 'the sender permission must reach the recipient');
 
   const carolShares = await call('/api/shares', { cookie: carolCookie });
   assert.strictEqual(carolShares.body.inbox.length, 0, 'carol must not see the share');

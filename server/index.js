@@ -195,6 +195,7 @@ async function handleApi(req, res, url) {
     if (!username) return;
     const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
     const { recipient, filename, size, iv, wrappedKey, ciphertext } = body;
+    const permission = body.permission === 'download' ? 'download' : 'view';
     if (!db.users[recipient]) return json(res, 400, { error: 'recipient does not exist' });
     if (!filename || typeof filename !== 'string') return json(res, 400, { error: 'filename missing' });
     if (typeof iv !== 'string' || typeof wrappedKey !== 'string' || typeof ciphertext !== 'string') {
@@ -209,6 +210,7 @@ async function handleApi(req, res, url) {
       to: recipient,
       filename,
       size: Number(size) || blob.length,
+      permission,
       iv,
       wrappedKey,
       blob: `${id}.bin`,
@@ -228,6 +230,7 @@ async function handleApi(req, res, url) {
       to: s.to,
       filename: s.filename,
       size: s.size,
+      permission: s.permission || 'view',
       createdAt: s.createdAt,
     });
     return json(res, 200, {
@@ -251,6 +254,7 @@ async function handleApi(req, res, url) {
       to: share.to,
       filename: share.filename,
       size: share.size,
+      permission: share.permission || 'view',
       iv: share.iv,
       wrappedKey: share.wrappedKey,
       createdAt: share.createdAt,

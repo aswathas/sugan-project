@@ -13,6 +13,7 @@ let me = null;
 let myKeys = null;
 let users = [];
 let pendingUser = null;
+let permission = 'view';
 
 /* ---------------- base64 ---------------- */
 
@@ -111,7 +112,7 @@ async function signIn(username, password) {
   await refresh();
   if (!myKeys) {
     $('share-status').textContent =
-      'No key pair on this device for this account — files sent to you cannot be decrypted here.';
+      'No key pair on this device for this account, so files sent to you cannot be decrypted here.';
   }
 }
 
@@ -143,7 +144,7 @@ $('register-form').addEventListener('submit', async (event) => {
     $('verify-email').textContent = email;
     if (result.demoCode) {
       $('verify-note').textContent =
-        `Demo mode — no email service is configured, so the code is ${result.demoCode}. With a mail service set up it would arrive by email.`;
+        `Demo mode: no email service is configured, so the code is ${result.demoCode}. With a mail service set up it would arrive by email.`;
       $('verify-code').value = result.demoCode;
     } else {
       $('verify-note').textContent = 'We sent a 6-digit code to your email. It expires in 10 minutes.';
@@ -174,24 +175,32 @@ $('verify-form').addEventListener('submit', async (event) => {
   }
 });
 
-$('tab-login').addEventListener('click', () => {
-  $('tab-login').classList.add('active');
-  $('tab-register').classList.remove('active');
-  $('login-form').classList.remove('hidden');
-  $('register-form').classList.add('hidden');
-});
+function setTab(which) {
+  const login = which === 'login';
+  $('tab-login').setAttribute('aria-pressed', String(login));
+  $('tab-register').setAttribute('aria-pressed', String(!login));
+  $('login-form').classList.toggle('hidden', !login);
+  $('register-form').classList.toggle('hidden', login);
+}
 
-$('tab-register').addEventListener('click', () => {
-  $('tab-register').classList.add('active');
-  $('tab-login').classList.remove('active');
-  $('register-form').classList.remove('hidden');
-  $('login-form').classList.add('hidden');
-});
+$('tab-login').addEventListener('click', () => setTab('login'));
+$('tab-register').addEventListener('click', () => setTab('register'));
 
 $('logout').addEventListener('click', async () => {
   await api('/api/logout', { method: 'POST' });
   location.reload();
 });
+
+/* ---------------- permission ---------------- */
+
+for (const cell of document.querySelectorAll('[data-permission]')) {
+  cell.addEventListener('click', () => {
+    permission = cell.dataset.permission;
+    for (const other of document.querySelectorAll('[data-permission]')) {
+      other.setAttribute('aria-pressed', String(other === cell));
+    }
+  });
+}
 
 /* ---------------- share ---------------- */
 
@@ -208,20 +217,31 @@ async function refresh() {
     option.textContent = user.username;
     select.appendChild(option);
   }
-  showRecipientKey();
+  await showRecipientKey();
 
   const shares = await api('/api/shares');
-  renderFiles($('inbox'), shares.inbox, 'from');
-  renderFiles($('sent'), shares.sent, 'to');
+  renderBoard($('inbox'), shares.inbox, 'from');
+  renderBoard($('sent'), shares.sent, 'to');
 }
 
 async function showRecipientKey() {
   const user = users.find((u) => u.username === $('recipient').value);
+  const note = $('recipient-key');
   if (!user) {
-    $('recipient-key').textContent = 'No other users registered yet — share the URL so a friend can register.';
+    note.textContent = 'No other users registered yet. Share the address so someone can register.';
     return;
   }
-  $('recipient-key').textContent = `Encrypting to ${user.username} — public key ${await fingerprint(user.publicKey)}`;
+  const print = await fingerprint(user.publicKey);
+  note.innerHTML = '';
+  const plate = document.createElement('span');
+  plate.className = 'plate';
+  const caption = document.createElement('span');
+  caption.textContent = 'public key';
+  const figure = document.createElement('span');
+  figure.className = 'plate__figure';
+  figure.textContent = print;
+  plate.append(caption, figure);
+  note.appendChild(plate);
 }
 
 $('recipient').addEventListener('change', showRecipientKey);
@@ -231,6 +251,7 @@ $('share').addEventListener('click', async () => {
   const recipient = $('recipient').value;
   const status = $('share-status');
   status.textContent = '';
+  status.className = 'status';
   if (!file) {
     status.textContent = 'Pick a file first.';
     return;
@@ -261,52 +282,102 @@ $('share').addEventListener('click', async () => {
         recipient,
         filename: file.name,
         size: file.size,
+        permission,
         iv: toB64(iv),
         wrappedKey: toB64(wrappedKey),
         ciphertext: toB64(ciphertext),
       },
     });
-    status.textContent = `Encrypted and sent to ${recipient}. The server only stored ciphertext.`;
+    status.className = 'status status--ok';
+    status.textContent =
+      permission === 'view'
+        ? `Encrypted and sent to ${recipient}. They can open it, not save it.`
+        : `Encrypted and sent to ${recipient}. They can open and save it.`;
     $('file').value = '';
     await refresh();
   } catch (err) {
+    status.className = 'status status--error';
     status.textContent = err.message;
   } finally {
     button.disabled = false;
   }
 });
 
-/* ---------------- inbox ---------------- */
+/* ---------------- the board ---------------- */
 
-function renderFiles(container, files, directionKey) {
+const OPENED_KEY = 'secureshare-opened';
+
+function openedShares() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(OPENED_KEY) || '[]'));
+  } catch {
+    return new Set();
+  }
+}
+
+function markOpened(id) {
+  const opened = openedShares();
+  opened.add(id);
+  localStorage.setItem(OPENED_KEY, JSON.stringify([...opened]));
+}
+
+function renderBoard(container, files, directionKey) {
   container.innerHTML = '';
   if (!files.length) {
     const empty = document.createElement('li');
-    empty.className = 'meta';
-    empty.textContent = 'Nothing yet.';
+    empty.className = 'row__empty';
+    empty.textContent = directionKey === 'from' ? 'Nothing has been shared with you yet.' : 'You have not sent anything yet.';
     container.appendChild(empty);
     return;
   }
+
+  const opened = openedShares();
   for (const file of files) {
     const item = document.createElement('li');
+    const unread = directionKey === 'from' && !opened.has(file.id);
+    item.className = unread ? 'row row--unread' : 'row';
 
     const left = document.createElement('div');
     const name = document.createElement('div');
-    name.className = 'name';
+    name.className = 'row__name';
     name.textContent = file.filename;
+
     const meta = document.createElement('div');
-    meta.className = 'meta';
-    const other = directionKey === 'from' ? file.from : file.to;
-    meta.textContent = `${other} · ${formatSize(file.size)} · ${new Date(file.createdAt).toLocaleString()}`;
-    left.appendChild(name);
-    left.appendChild(meta);
+    meta.className = 'row__meta';
+    const other = document.createElement('span');
+    other.textContent = directionKey === 'from' ? `from ${file.from}` : `to ${file.to}`;
+    const size = document.createElement('span');
+    size.textContent = formatSize(file.size);
+    const when = document.createElement('span');
+    when.textContent = new Date(file.createdAt).toLocaleString();
+    const access = document.createElement('span');
+    access.textContent = file.permission === 'view' ? 'view only' : 'view and download';
+    meta.append(other, size, when, access);
+    if (unread) {
+      const state = document.createElement('span');
+      state.textContent = 'not opened yet';
+      meta.appendChild(state);
+    }
+    left.append(name, meta);
 
+    const action = document.createElement('div');
+    action.className = 'row__action';
+    if (unread) {
+      const live = document.createElement('span');
+      live.className = 'live';
+      live.setAttribute('aria-hidden', 'true');
+      action.appendChild(live);
+    }
     const button = document.createElement('button');
-    button.textContent = directionKey === 'from' ? 'Decrypt & download' : 'View';
-    button.addEventListener('click', () => (directionKey === 'from' ? openShare(file.id) : showSent(file.id)));
+    button.className = 'btn';
+    button.type = 'button';
+    button.textContent = directionKey === 'from' ? 'Decrypt' : 'Details';
+    button.addEventListener('click', () =>
+      directionKey === 'from' ? openShare(file.id) : showSent(file.id)
+    );
+    action.appendChild(button);
 
-    item.appendChild(left);
-    item.appendChild(button);
+    item.append(left, action);
     container.appendChild(item);
   }
 }
@@ -324,6 +395,8 @@ function formatSize(bytes) {
 }
 
 async function openShare(id) {
+  const status = $('share-status');
+  status.className = 'status';
   try {
     if (!myKeys) throw new Error('No key pair on this device for this account.');
     const meta = await api(`/api/shares/${id}`);
@@ -337,22 +410,44 @@ async function openShare(id) {
 
     const blob = new Blob([plaintext], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = meta.filename;
-    link.click();
+    markOpened(id);
+
+    if (meta.permission === 'view') {
+      const tab = window.open(url, '_blank');
+      if (!tab) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.click();
+      }
+      status.className = 'status status--ok';
+      status.textContent = 'Opened in a new tab. The sender marked this file view only, so there is no save button.';
+    } else {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = meta.filename;
+      link.click();
+      status.className = 'status status--ok';
+      status.textContent = 'Decrypted and saved to your downloads.';
+    }
     URL.revokeObjectURL(url);
+    await refresh();
   } catch (err) {
-    $('share-status').textContent = `Decrypt failed: ${err.message}`;
+    status.className = 'status status--error';
+    status.textContent = `Decrypt failed: ${err.message}`;
   }
 }
 
 async function showSent(id) {
+  const status = $('share-status');
   try {
     const meta = await api(`/api/shares/${id}`);
-    $('share-status').textContent =
-      `Sent to ${meta.to} — ${meta.filename}. The server holds ciphertext only; ${meta.to} is the only one who can read it.`;
+    status.className = 'status status--ok';
+    status.textContent =
+      `Sent to ${meta.to}. The server holds ciphertext only, and ${meta.permission === 'view' ? 'the file is marked view only' : 'the file can be saved'}.`;
   } catch (err) {
-    $('share-status').textContent = err.message;
+    status.className = 'status status--error';
+    status.textContent = err.message;
   }
 }

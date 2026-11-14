@@ -3,82 +3,133 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SecureShare — end-to-end encrypted file sharing</title>
+<meta name="description" content="SecureShare shares a file with one person, encrypted in your own browser, so the server never sees it.">
+<title>SecureShare</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-  <div class="brand">
-    <span class="lock">🔒</span>
-    <div>
-      <h1>SecureShare</h1>
-      <p class="tag">End-to-end encrypted file sharing — the server never sees your files</p>
+<header class="band">
+  <div class="band__inner">
+    <div class="wordmark">
+      <span class="wordmark__mark" aria-hidden="true"></span>
+      <span class="wordmark__name">SecureShare</span>
+      <span class="wordmark__claim">The server never sees your file</span>
     </div>
-  </div>
-  <div id="session" class="session hidden">
-    <span id="who"></span>
-    <button id="logout" class="ghost">Sign out</button>
+    <div id="session" class="session hidden">
+      <span class="session__who">Signed in as <strong id="who"></strong></span>
+      <button id="logout" class="btn btn--on-ink" type="button">Sign out</button>
+    </div>
   </div>
 </header>
 
-<main>
+<main class="shell">
   <!-- AUTH -->
-  <section id="auth" class="card">
-    <div class="tabs" id="tabs">
-      <button id="tab-login" class="tab active">Sign in</button>
-      <button id="tab-register" class="tab">Register</button>
+  <section id="auth" class="auth">
+    <h1>Send one file to one person</h1>
+    <p class="auth__claim">
+      Every user gets a key pair generated in their own browser. A file is encrypted before it
+      leaves the sender’s device, so the server stores ciphertext and nothing else.
+    </p>
+
+    <div class="auth__panel">
+      <div class="tabs" id="tabs">
+        <button class="cell" id="tab-login" type="button" aria-pressed="true">Sign in</button>
+        <button class="cell" id="tab-register" type="button" aria-pressed="false">Register</button>
+      </div>
+
+      <form id="login-form">
+        <div class="field">
+          <label class="route__label" for="login-username">Username</label>
+          <input class="input" id="login-username" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label class="route__label" for="login-password">Password</label>
+          <input class="input" id="login-password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="btn btn--primary" type="submit">Sign in</button>
+      </form>
+
+      <form id="register-form" class="hidden">
+        <div class="field">
+          <label class="route__label" for="register-username">Username</label>
+          <input class="input" id="register-username" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label class="route__label" for="register-email">Email</label>
+          <input class="input" id="register-email" type="email" autocomplete="email" required>
+        </div>
+        <div class="field">
+          <label class="route__label" for="register-password">Password</label>
+          <input class="input" id="register-password" type="password" autocomplete="new-password" minlength="6" required>
+        </div>
+        <p class="note">
+          Your key pair is generated in this browser when you register. The private key is stored
+          on this device and never sent to the server. We email you a 6-digit code to verify the
+          account.
+        </p>
+        <button class="btn btn--primary" type="submit">Create account</button>
+      </form>
+
+      <form id="verify-form" class="hidden">
+        <div class="field">
+          <span class="route__label">Verify</span>
+          <p id="verify-email" class="note"></p>
+        </div>
+        <div class="field">
+          <label class="route__label" for="verify-code">6-digit code</label>
+          <input class="input" id="verify-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
+        </div>
+        <p id="verify-note" class="note"></p>
+        <button class="btn btn--primary" type="submit">Verify and sign in</button>
+      </form>
+
+      <p id="auth-error" class="status status--error"></p>
     </div>
-
-    <form id="login-form">
-      <label>Username <input id="login-username" autocomplete="username" required></label>
-      <label>Password <input id="login-password" type="password" autocomplete="current-password" required></label>
-      <button type="submit">Sign in</button>
-    </form>
-
-    <form id="register-form" class="hidden">
-      <label>Username <input id="register-username" autocomplete="username" required></label>
-      <label>Email <input id="register-email" type="email" autocomplete="email" required></label>
-      <label>Password <input id="register-password" type="password" autocomplete="new-password" minlength="6" required></label>
-      <p class="note">
-        Your key pair is generated <strong>in this browser</strong> when you register. The private key is
-        stored on this device only and never sent to the server. We email you a 6-digit code to verify
-        the account.
-      </p>
-      <button type="submit">Create account &amp; generate keys</button>
-    </form>
-
-    <form id="verify-form" class="hidden">
-      <label>Verify <span id="verify-email"></span></label>
-      <label>6-digit code <input id="verify-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></label>
-      <p id="verify-note" class="note"></p>
-      <button type="submit">Verify &amp; sign in</button>
-    </form>
-
-    <p id="auth-error" class="error"></p>
   </section>
 
   <!-- APP -->
   <section id="app" class="hidden">
-    <div class="grid">
-      <div class="card">
-        <h2>Share a file</h2>
-        <label>File <input id="file" type="file"></label>
-        <label>Recipient
-          <select id="recipient"></select>
-        </label>
-        <p id="recipient-key" class="note"></p>
-        <button id="share">Encrypt in browser &amp; send</button>
-        <p id="share-status" class="status"></p>
+    <div class="work">
+      <div>
+        <span class="tab">Send a file</span>
+        <div class="route">
+          <div class="route__step">
+            <span class="route__label" id="file-label">File</span>
+            <input class="input" id="file" type="file" aria-labelledby="file-label">
+          </div>
+
+          <div class="route__step">
+            <label class="route__label" for="recipient">Recipient</label>
+            <select class="input" id="recipient"></select>
+            <p id="recipient-key" class="note"></p>
+          </div>
+
+          <div class="route__step">
+            <fieldset class="choice">
+              <legend class="choice__legend">What they may do with it</legend>
+              <div class="choice__cells">
+                <button type="button" class="cell" data-permission="view" aria-pressed="true">View only</button>
+                <button type="button" class="cell" data-permission="download" aria-pressed="false">View and download</button>
+              </div>
+            </fieldset>
+          </div>
+
+          <div class="route__step">
+            <button id="share" class="btn btn--primary" type="button">Encrypt and send</button>
+            <p id="share-status" class="status"></p>
+          </div>
+        </div>
       </div>
 
-      <div class="card">
-        <h2>Shared with me</h2>
-        <ul id="inbox" class="files"></ul>
-      </div>
-
-      <div class="card">
-        <h2>Sent by me</h2>
-        <ul id="sent" class="files"></ul>
+      <div>
+        <div class="board-group">
+          <span class="tab">Shared with me</span>
+          <ul class="board" id="inbox"></ul>
+        </div>
+        <div class="board-group">
+          <span class="tab">Sent by me</span>
+          <ul class="board" id="sent"></ul>
+        </div>
       </div>
     </div>
   </section>

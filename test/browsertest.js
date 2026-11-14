@@ -46,6 +46,7 @@ async function launchChrome(profileDir) {
       '--no-default-browser-check',
       '--disable-extensions',
       '--disable-background-networking',
+      '--window-size=1280,900',
       `--user-data-dir=${profileDir}`,
       '--remote-debugging-port=0',
       'about:blank',
@@ -157,12 +158,14 @@ async function signUp(cdp, sessionId, username) {
       return true;
     })()`
   );
+  await shoot(cdp, sessionId, '00-register.png');
   await waitFor(
     cdp,
     sessionId,
     "!document.getElementById('verify-form').classList.contains('hidden')",
     'verification step shown'
   );
+  await shoot(cdp, sessionId, '01-verify.png');
   await evaluate(cdp, sessionId, `(() => {
     document.getElementById('verify-form').requestSubmit();
     return true;
@@ -200,8 +203,6 @@ async function signUp(cdp, sessionId, username) {
     await signUp(bob, bobPage, 'bob');
     console.log('PASS  two users registered in two separate browser profiles');
 
-    await shoot(alice, alicePage, '01-share-panel.png');
-
     // Alice's private key is on her device only.
     const aliceKey = await evaluate(
       alice,
@@ -226,6 +227,7 @@ async function signUp(cdp, sessionId, username) {
       `!!document.getElementById('recipient').querySelector('option[value="bob"]')`,
       'bob in alice recipient list'
     );
+    await shoot(alice, alicePage, '02-share-panel.png');
     const uploadPath = path.join(DATA_DIR, 'syllabus.pdf');
     fs.writeFileSync(uploadPath, `%PDF-1.4 ${MARKER}`);
     const { root } = await alice.send('DOM.getDocument', {}, alicePage);
@@ -249,6 +251,7 @@ async function signUp(cdp, sessionId, username) {
       "document.getElementById('share-status').textContent.includes('Encrypted and sent')",
       'alice send confirmation'
     );
+    await shoot(alice, alicePage, '03-sent.png');
     console.log('PASS  file encrypted in the browser and sent to bob');
 
     // The server holds ciphertext only.
@@ -262,7 +265,7 @@ async function signUp(cdp, sessionId, username) {
     // Bob receives and decrypts.
     await evaluate(bob, bobPage, 'refresh()');
     await waitFor(bob, bobPage, "document.querySelectorAll('#inbox li').length === 1", 'bob sees one file');
-    await shoot(bob, bobPage, '02-inbox.png');
+    await shoot(bob, bobPage, '04-inbox.png');
     await evaluate(
       bob,
       bobPage,
@@ -290,6 +293,7 @@ async function signUp(cdp, sessionId, username) {
       'bob must get the original file back'
     );
     console.log('PASS  recipient decrypted in the browser to the original bytes');
+    await shoot(bob, bobPage, '05-decrypted.png');
 
     console.log('\nALL BROWSER CHECKS PASSED');
   } finally {
