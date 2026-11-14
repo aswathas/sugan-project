@@ -1,0 +1,126 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:#ffffff}svg{display:block}</style></head><body><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #f8fafc;
+      --border: #cbd5e1;
+      --text: #0f172a;
+      --muted: #475569;
+      --arrow: #334155;
+      --primary: #1d4ed8;
+      --primary-bg: #eff6ff;
+      --primary-border: #93c5fd;
+      --accent: #0f766e;
+      --accent-bg: #f0fdfa;
+      --accent-border: #5eead4;
+      --server: #334155;
+      --warn: #b91c1c;
+      --warn-bg: #fef2f2;
+      --warn-border: #fca5a5;
+    }
+    text {
+      font-family: Inter, "Segoe UI", Helvetica, Arial, sans-serif;
+      fill: var(--text);
+    }
+    .title { font-size: 25px; font-weight: 700; }
+    .subtitle { font-size: 14px; font-weight: 400; fill: var(--muted); }
+    .col-header { font-size: 16px; font-weight: 700; fill: #ffffff; }
+    .box-title { font-size: 15px; font-weight: 700; }
+    .box-sub { font-size: 13px; font-weight: 400; fill: var(--muted); }
+    .arrow-primary-label { font-size: 13.5px; font-weight: 700; fill: var(--primary); }
+    .arrow-accent-label { font-size: 13.5px; font-weight: 700; fill: var(--accent); }
+    .warn-title { font-size: 15px; font-weight: 700; fill: var(--warn); }
+    .safe-sub { font-size: 13px; font-weight: 600; fill: var(--accent); }
+    .status-text { font-size: 13.5px; font-weight: 600; fill: var(--accent); }
+  </style>
+
+  <defs>
+    <marker id="arrow-primary" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arrow-accent" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="#0f766e"/>
+    </marker>
+    <marker id="arrow-warn" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="#b91c1c"/>
+    </marker>
+  </defs>
+
+  <!-- Canvas -->
+  <rect x="0" y="0" width="1200" height="675" fill="var(--bg)"/>
+
+  <!-- Header -->
+  <text x="48" y="46" class="title">Proposed File Sharing (With End-to-End Encryption)</text>
+  <text x="48" y="70" class="subtitle">Encryption and decryption occur only in the browsers; the server stores ciphertext and cannot read the file.</text>
+  <line x1="48" y1="86" x2="1152" y2="86" stroke="var(--border)" stroke-width="1"/>
+
+  <!-- Status Banner -->
+  <rect x="48" y="106" width="1104" height="38" rx="8" fill="var(--accent-bg)" stroke="var(--accent-border)" stroke-width="1.5"/>
+  <text x="600" y="130" text-anchor="middle" class="status-text">Protected by Design: Only the recipient's private key can unwrap the AES key and decrypt the file</text>
+
+  <!-- Actor 1: Sender's Browser (x=64, y=200, w=250, h=220) -->
+  <rect x="64" y="200" width="250" height="220" rx="10" fill="var(--primary-bg)" stroke="var(--primary-border)" stroke-width="1.5"/>
+  <path d="M 64 210 Q 64 200 74 200 L 304 200 Q 314 200 314 210 L 314 242 L 64 242 Z" fill="var(--primary)"/>
+  <text x="189" y="227" text-anchor="middle" class="col-header">Sender's Browser</text>
+
+  <rect x="84" y="268" width="210" height="84" rx="8" fill="#ffffff" stroke="var(--primary-border)" stroke-width="1.5"/>
+  <text x="189" y="295" text-anchor="middle" class="box-title">Encrypts Before Upload</text>
+  <text x="189" y="317" text-anchor="middle" class="box-sub">AES-GCM encrypts file</text>
+  <text x="189" y="336" text-anchor="middle" class="box-sub">RSA-OAEP wraps AES key</text>
+
+  <text x="189" y="388" text-anchor="middle" class="box-sub">Plaintext never leaves device</text>
+
+  <!-- Actor 2: Server (x=455, y=170, w=290, h=280) -->
+  <rect x="455" y="170" width="290" height="280" rx="10" fill="var(--surface)" stroke="var(--border)" stroke-width="2"/>
+  <path d="M 455 180 Q 455 170 465 170 L 735 170 Q 745 170 745 180 L 745 212 L 455 212 Z" fill="var(--server)"/>
+  <text x="600" y="197" text-anchor="middle" class="col-header">Server</text>
+
+  <!-- Server Storage Box -->
+  <rect x="477" y="232" width="246" height="196" rx="8" fill="#ffffff" stroke="var(--border)" stroke-width="1.5"/>
+  <text x="600" y="258" text-anchor="middle" class="box-title">Server Storage</text>
+  <text x="600" y="284" text-anchor="middle" class="box-title">Stores ciphertext,</text>
+  <text x="600" y="304" text-anchor="middle" class="box-title">IV, wrapped key</text>
+
+  <rect x="499" y="322" width="202" height="62" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-width="1.5"/>
+  <text x="600" y="348" text-anchor="middle" class="box-sub">Encrypted blob + metadata</text>
+  <text x="600" y="369" text-anchor="middle" class="box-sub">No plaintext · No private key</text>
+
+  <text x="600" y="412" text-anchor="middle" class="safe-sub">Zero plaintext on disk</text>
+
+  <!-- Actor 3: Recipient's Browser (x=886, y=200, w=250, h=220) -->
+  <rect x="886" y="200" width="250" height="220" rx="10" fill="var(--accent-bg)" stroke="var(--accent-border)" stroke-width="1.5"/>
+  <path d="M 886 210 Q 886 200 896 200 L 1126 200 Q 1136 200 1136 210 L 1136 242 L 886 242 Z" fill="var(--accent)"/>
+  <text x="1011" y="227" text-anchor="middle" class="col-header">Recipient's Browser</text>
+
+  <rect x="906" y="268" width="210" height="84" rx="8" fill="#ffffff" stroke="var(--accent-border)" stroke-width="1.5"/>
+  <text x="1011" y="295" text-anchor="middle" class="box-title">Decrypts Locally</text>
+  <text x="1011" y="317" text-anchor="middle" class="box-sub">Unwraps key via IndexedDB</text>
+  <text x="1011" y="336" text-anchor="middle" class="box-sub">Decrypts ciphertext to PDF</text>
+
+  <text x="1011" y="388" text-anchor="middle" class="box-sub">Only recipient can read</text>
+
+  <!-- Horizontal Flow Arrows -->
+  <line x1="314" y1="310" x2="450" y2="310" stroke="var(--primary)" stroke-width="3" marker-end="url(#arrow-primary)"/>
+  <rect x="326" y="274" width="116" height="26" rx="4" fill="#ffffff"/>
+  <text x="384" y="292" text-anchor="middle" class="arrow-primary-label">ciphertext only</text>
+
+  <line x1="745" y1="310" x2="881" y2="310" stroke="var(--accent)" stroke-width="3" marker-end="url(#arrow-accent)"/>
+  <rect x="757" y="274" width="116" height="26" rx="4" fill="#ffffff"/>
+  <text x="815" y="292" text-anchor="middle" class="arrow-accent-label">ciphertext only</text>
+
+  <!-- Actor 4: Attacker (x=455, y=544, w=290, h=92) -->
+  <rect x="455" y="544" width="290" height="92" rx="10" fill="var(--warn-bg)" stroke="var(--warn)" stroke-width="2"/>
+  <text x="600" y="576" text-anchor="middle" class="warn-title">Attacker / Unauthorized Access</text>
+  <text x="600" y="599" text-anchor="middle" class="box-sub">Server breach, insider access, or</text>
+  <text x="600" y="618" text-anchor="middle" class="box-sub">compromised storage</text>
+
+  <!-- Attacker Arrow stops at Server Storage boundary -->
+  <line x1="600" y1="544" x2="600" y2="460" stroke="var(--warn)" stroke-width="3" marker-end="url(#arrow-warn)"/>
+  <!-- Cryptographic barrier stop bar at Server edge (y=450) -->
+  <line x1="556" y1="450" x2="644" y2="450" stroke="var(--accent)" stroke-width="4" stroke-linecap="round"/>
+
+  <rect x="614" y="472" width="174" height="44" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-width="1"/>
+  <text x="701" y="492" text-anchor="middle" class="warn-title">Cannot read the file</text>
+  <text x="701" y="509" text-anchor="middle" class="box-sub">Ciphertext only; no key</text>
+</svg>
+</body></html>

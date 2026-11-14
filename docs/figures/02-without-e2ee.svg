@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #f8fafc;
+      --border: #cbd5e1;
+      --text: #0f172a;
+      --muted: #475569;
+      --arrow: #334155;
+      --primary: #1d4ed8;
+      --primary-bg: #eff6ff;
+      --primary-border: #93c5fd;
+      --accent: #0f766e;
+      --accent-bg: #f0fdfa;
+      --accent-border: #5eead4;
+      --server: #334155;
+      --warn: #b91c1c;
+      --warn-bg: #fef2f2;
+      --warn-border: #fca5a5;
+    }
+    text {
+      font-family: Inter, "Segoe UI", Helvetica, Arial, sans-serif;
+      fill: var(--text);
+    }
+    .title { font-size: 25px; font-weight: 700; }
+    .subtitle { font-size: 14px; font-weight: 400; fill: var(--muted); }
+    .col-header { font-size: 16px; font-weight: 700; fill: #ffffff; }
+    .box-title { font-size: 15px; font-weight: 700; }
+    .box-sub { font-size: 13px; font-weight: 400; fill: var(--muted); }
+    .arrow-label { font-size: 13.5px; font-weight: 700; fill: var(--warn); }
+    .warn-title { font-size: 15px; font-weight: 700; fill: var(--warn); }
+    .warn-sub { font-size: 13px; font-weight: 600; fill: #7f1d1d; }
+    .status-text { font-size: 13.5px; font-weight: 600; fill: var(--warn); }
+  </style>
+
+  <defs>
+    <marker id="arrow-warn" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="#b91c1c"/>
+    </marker>
+  </defs>
+
+  <!-- Canvas -->
+  <rect x="0" y="0" width="1200" height="675" fill="var(--bg)"/>
+
+  <!-- Header -->
+  <text x="48" y="46" class="title">Conventional File Sharing (Without End-to-End Encryption)</text>
+  <text x="48" y="70" class="subtitle">The server receives and stores the plaintext file in readable form, exposing it to server operators or attackers.</text>
+  <line x1="48" y1="86" x2="1152" y2="86" stroke="var(--border)" stroke-width="1"/>
+
+  <!-- Status Banner -->
+  <rect x="48" y="106" width="1104" height="38" rx="8" fill="var(--warn-bg)" stroke="var(--warn-border)" stroke-width="1.5"/>
+  <text x="600" y="130" text-anchor="middle" class="status-text">Exposure Risk: Plaintext file is readable on the server and vulnerable to compromise</text>
+
+  <!-- Actor 1: Sender's Browser (x=64, y=200, w=250, h=220) -->
+  <rect x="64" y="200" width="250" height="220" rx="10" fill="var(--primary-bg)" stroke="var(--primary-border)" stroke-width="1.5"/>
+  <path d="M 64 210 Q 64 200 74 200 L 304 200 Q 314 200 314 210 L 314 242 L 64 242 Z" fill="var(--primary)"/>
+  <text x="189" y="227" text-anchor="middle" class="col-header">Sender's Browser</text>
+
+  <rect x="84" y="268" width="210" height="84" rx="8" fill="var(--warn-bg)" stroke="var(--warn)" stroke-width="1.5"/>
+  <text x="189" y="298" text-anchor="middle" class="warn-title">Plaintext File (PDF)</text>
+  <text x="189" y="320" text-anchor="middle" class="box-sub">Uploaded unencrypted</text>
+  <text x="189" y="338" text-anchor="middle" class="box-sub">No client-side key wrapping</text>
+
+  <text x="189" y="388" text-anchor="middle" class="box-sub">Server controls access</text>
+
+  <!-- Actor 2: Server (x=455, y=170, w=290, h=280) -->
+  <rect x="455" y="170" width="290" height="280" rx="10" fill="var(--surface)" stroke="var(--warn)" stroke-width="2"/>
+  <path d="M 455 180 Q 455 170 465 170 L 735 170 Q 745 170 745 180 L 745 212 L 455 212 Z" fill="var(--server)"/>
+  <text x="600" y="197" text-anchor="middle" class="col-header">Server</text>
+
+  <!-- Server Storage Box -->
+  <rect x="477" y="232" width="246" height="196" rx="8" fill="var(--warn-bg)" stroke="var(--warn)" stroke-width="2"/>
+  <text x="600" y="258" text-anchor="middle" class="box-title">Server Storage</text>
+  <text x="600" y="286" text-anchor="middle" class="warn-title">Stores the file in</text>
+  <text x="600" y="306" text-anchor="middle" class="warn-title">readable form</text>
+  <text x="600" y="330" text-anchor="middle" class="warn-sub">Exposed if server is breached</text>
+
+  <rect x="499" y="348" width="202" height="64" rx="6" fill="#ffffff" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text x="600" y="374" text-anchor="middle" class="warn-sub">document.pdf (Plaintext)</text>
+  <text x="600" y="395" text-anchor="middle" class="box-sub">Visible on disk &amp; in memory</text>
+
+  <!-- Actor 3: Recipient's Browser (x=886, y=200, w=250, h=220) -->
+  <rect x="886" y="200" width="250" height="220" rx="10" fill="var(--accent-bg)" stroke="var(--accent-border)" stroke-width="1.5"/>
+  <path d="M 886 210 Q 886 200 896 200 L 1126 200 Q 1136 200 1136 210 L 1136 242 L 886 242 Z" fill="var(--accent)"/>
+  <text x="1011" y="227" text-anchor="middle" class="col-header">Recipient's Browser</text>
+
+  <rect x="906" y="268" width="210" height="84" rx="8" fill="#ffffff" stroke="var(--accent-border)" stroke-width="1.5"/>
+  <text x="1011" y="298" text-anchor="middle" class="box-title">Receives Plaintext File</text>
+  <text x="1011" y="320" text-anchor="middle" class="box-sub">Downloads readable bytes</text>
+  <text x="1011" y="338" text-anchor="middle" class="box-sub">directly from server</text>
+
+  <text x="1011" y="388" text-anchor="middle" class="box-sub">Trusts server not to read</text>
+
+  <!-- Horizontal Flow Arrows -->
+  <line x1="314" y1="310" x2="450" y2="310" stroke="var(--warn)" stroke-width="3" marker-end="url(#arrow-warn)"/>
+  <rect x="332" y="274" width="104" height="26" rx="4" fill="#ffffff"/>
+  <text x="384" y="292" text-anchor="middle" class="arrow-label">plaintext file</text>
+
+  <line x1="745" y1="310" x2="881" y2="310" stroke="var(--warn)" stroke-width="3" marker-end="url(#arrow-warn)"/>
+  <rect x="763" y="274" width="104" height="26" rx="4" fill="#ffffff"/>
+  <text x="815" y="292" text-anchor="middle" class="arrow-label">plaintext file</text>
+
+  <!-- Actor 4: Attacker (x=455, y=544, w=290, h=92) -->
+  <rect x="455" y="544" width="290" height="92" rx="10" fill="var(--warn-bg)" stroke="var(--warn)" stroke-width="2"/>
+  <text x="600" y="576" text-anchor="middle" class="warn-title">Attacker / Unauthorized Access</text>
+  <text x="600" y="599" text-anchor="middle" class="box-sub">Server breach, insider access, or</text>
+  <text x="600" y="618" text-anchor="middle" class="box-sub">compromised storage</text>
+
+  <!-- Attacker Arrow reaching right into Server Storage -->
+  <line x1="600" y1="544" x2="600" y2="418" stroke="var(--warn)" stroke-width="3" marker-end="url(#arrow-warn)"/>
+  <rect x="614" y="472" width="168" height="44" rx="6" fill="var(--warn-bg)" stroke="var(--warn-border)" stroke-width="1"/>
+  <text x="698" y="492" text-anchor="middle" class="arrow-label">File read in plaintext</text>
+  <text x="698" y="509" text-anchor="middle" class="box-sub">Full content exposed</text>
+</svg>
