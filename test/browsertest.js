@@ -638,6 +638,50 @@ async function signUp(cdp, sessionId, username) {
     await evaluate(bob, bobPage, "document.getElementById('anatomy-close').click()");
     console.log('PASS  the anatomy is one component, on the sign in page and in the app');
 
+    // The cipher field is the one live piece of the anatomy: the bytes under
+    // it must be the ones this browser really produced.
+    const field = await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        const canvas = document.querySelector('.cipher-field__canvas');
+        const read = (name) => {
+          const dt = [...document.querySelectorAll('.cipher-field__readout dt')].find(
+            (d) => d.textContent.trim() === name
+          );
+          return dt ? dt.nextElementSibling.textContent.trim() : '';
+        };
+        return {
+          canvas: Boolean(canvas),
+          plaintext: read('plaintext'),
+          ciphertext: read('ciphertext'),
+          digest: read('sha-256'),
+        };
+      })()`
+    );
+    assert.ok(field.canvas, 'the anatomy must carry the cipher field');
+    assert.ok(
+      /^[0-9a-f]{2}( [0-9a-f]{2})*$/.test(field.digest) && field.digest.split(' ').length === 32,
+      'the field must show a real sha-256 of the plaintext'
+    );
+    assert.ok(
+      /^[0-9a-f]{2}( [0-9a-f]{2})*( …)?$/.test(field.ciphertext) && field.ciphertext.length > 20,
+      'the field must show real ciphertext'
+    );
+    await evaluate(alice, alicePage, "document.querySelector('.cipher-field__foot button').click()");
+    await waitFor(
+      alice,
+      alicePage,
+      `(() => {
+        const dt = [...document.querySelectorAll('.cipher-field__readout dt')].find(
+          (d) => d.textContent.trim() === 'ciphertext'
+        );
+        return dt && dt.nextElementSibling.textContent.trim() !== ${JSON.stringify(field.ciphertext)};
+      })()`,
+      'the field runs again with a fresh key'
+    );
+    console.log('PASS  the cipher field encrypts a real sample in the browser');
+
     const chip = await evaluate(
       bob,
       bobPage,

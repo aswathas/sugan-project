@@ -72,6 +72,12 @@ const ANATOMY = {
       'const passwordWrappedKey = (await KeyGuard.wrapWithPassword(aes, password)).wrappedKey;',
     ].join('\n'),
   },
+  cipher: {
+    tab: 'Running',
+    heading: 'The same encryption, running here',
+    body:
+      'This is not a picture. The bytes on the right were produced by this browser, with the Web Crypto API, a moment before you read this line.',
+  },
   faq: {
     heading: 'Questions before you sign up',
     items: [
@@ -94,6 +100,10 @@ const ANATOMY = {
       {
         q: 'How does the recipient know the file was not altered?',
         a: 'After decrypting the ciphertext, the recipient’s browser recomputes the SHA-256 digest and verifies the sender’s ECDSA P-256 signature over the parties, filename, size, digest, IV, permission, and expiry.',
+      },
+      {
+        q: 'Can I add a second factor to my account?',
+        a: 'Yes. The Two-factor button in the header turns on Google Authenticator, and the account then needs both your password and the six digit code the app shows. The code needs no network and no mail service, and turning the factor off needs a code as well.',
       },
     ],
   },
@@ -217,6 +227,26 @@ function renderAnatomy(mount, data = ANATOMY, prefix = 'anatomy') {
     )
   );
 
+  if (data.cipher) {
+    const field = el('div', { class: 'cipher-field__mount' });
+    mount.append(
+      el(
+        'section',
+        { class: 'auth__section', 'aria-labelledby': id('cipher-heading') },
+        el(
+          'div',
+          { class: 'auth__section-head' },
+          el('span', { class: 'tab' }, data.cipher.tab),
+          el('h2', { id: id('cipher-heading') }, data.cipher.heading),
+          el('p', { class: 'auth__claim' }, data.cipher.body)
+        ),
+        field
+      )
+    );
+    // The field draws itself with WebGL and encrypts a real sample.
+    if (window.CipherField) window.CipherField.mount(field);
+  }
+
   const f = data.faq;
   mount.append(
     el(
@@ -292,7 +322,7 @@ function open() {
   const dialog = document.getElementById('anatomy-dialog');
   const body = document.getElementById('anatomy-dialog-body');
   if (!dialog || !body) return;
-  renderAnatomy(body, { ...ANATOMY, close: null }, 'anatomy-app');
+  renderAnatomy(body, { ...ANATOMY, close: null, cipher: null }, 'anatomy-app');
   dialog.classList.remove('hidden');
   const closer = document.getElementById('anatomy-close');
   if (closer) closer.focus();

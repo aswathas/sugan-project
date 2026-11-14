@@ -1358,6 +1358,57 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
   background: var(--color-paper-3);
 }
 
+/* ---------- the cipher field ---------- */
+
+.cipher-field {
+  border: var(--rule-bar) solid var(--color-ink);
+  background: var(--color-paper-3);
+}
+
+.cipher-field__canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 7;
+  background: var(--color-paper-2);
+}
+
+.cipher-field__readout {
+  display: grid;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: var(--space-md) var(--space-lg);
+  border-top: var(--rule-bar) solid var(--color-ink);
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.cipher-field__row {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: var(--space-md);
+}
+
+.cipher-field__row dt {
+  color: var(--color-muted);
+}
+
+.cipher-field__row dd {
+  margin: 0;
+}
+
+.cipher-field__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-lg);
+  border-top: var(--rule-hair) solid var(--color-rule);
+  background: var(--color-paper);
+}
+
 .faq__item + .faq__item {
   border-top: var(--rule-hair) solid var(--color-rule);
 }

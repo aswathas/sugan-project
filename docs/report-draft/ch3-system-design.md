@@ -70,7 +70,7 @@ Table 3.2 Software requirements
 | Operating system | Windows, Linux or macOS |
 | Runtime | Node.js 18 or later; the prototype was tested on Node 23 |
 | Server-side modules | `node:http`, `node:crypto`, `node:fs`, `node:path` and the built-in `fetch`; `node:crypto` also verifies the RS256 signature on a Google ID token and computes the RFC 6238 one-time codes, and `fetch` retrieves Google's signing keys |
-| Browser | A current browser with Web Crypto and IndexedDB: Chrome, Edge or Firefox |
+| Browser | A current browser with Web Crypto, IndexedDB and WebGL: Chrome, Edge or Firefox |
 | Client-side APIs | Web Cryptography API, including RSA-OAEP, ECDSA P-256, AES-GCM, AES-KW and PBKDF2, IndexedDB, Fetch API, Blob and object URLs; Google Identity Services when the Google path is configured |
 | Response headers | A content security policy, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: strict-origin-when-cross-origin` on every response |
 | Test harness | Node.js for the self-test and the Google verification test; Chrome or Edge for the headless test, driven over the DevTools protocol |
@@ -101,6 +101,7 @@ Table 3.3 Stage-wise development of the prototype
 | 12 | Verification | Node self-test, Google verification test and headless Chrome test of the interface |
 | 13 | Documentation | README, decision record, change inventory and this report |
 | 14 | Second factor and the anatomy | A time-based one-time password from an authenticator app, and the anatomy of the product written once and mounted on the sign in page and in the workspace |
+| 15 | The cipher field | A WebGL canvas on the sign in page that draws the encryption crossing the file, over the ciphertext the browser really produced |
 
 The order was chosen so that each stage could be verified against the previous one. The server contract was exercised by the self-test before the browser interface existed, and the interface was exercised by the headless test once it did. The later stages follow the same rule: each new endpoint was added to the server test before it was offered in the interface, and each new card state was checked in the browser test. This is why the results in Chapter 4 can distinguish a failure of the server from a failure of the client.
 

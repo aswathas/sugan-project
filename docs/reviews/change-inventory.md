@@ -106,3 +106,15 @@
 | `docs/report-draft/appendices.md` | the raw output of both suites reproduced with the new lines | the appendix is the raw record | the report build |
 | `docs/report-draft/ch5-conclusion.md` | the counts corrected and the second factor and the anatomy added to the account of the work | the conclusion must not quote stale numbers | the report build |
 | `report/SecureShare-Project-Report.docx`, `report/SecureShare-Project-Report.pdf`, `report/SecureShare-REVIEW-3.pptx` | rebuilt | the deliverables must match the code | the deck validation and the measured contents page numbers |
+| `public/cipherfield.js` | created | the live piece of the anatomy: a WebGL field that draws the wave of encryption crossing the file, over a real AES-GCM encryption of a sample in the same browser | `npm run test:browser`, and the field was captured from the running site for the deck |
+| `public/anatomy.js` | the cipher section was added to the component, and the questions now ask about the second factor | the anatomy must carry the two things that were added | `npm run test:browser` |
+| `public/index.html` | the cipher field script was loaded | the field is a separate concern from the anatomy | `npm run test:browser` |
+| `public/style.css` | the styles for the field, the readout and the footer | the field must sit in the theme like the rest | the design gate |
+| `test/browsertest.js` | the cipher field check: a real digest, real ciphertext, and different ciphertext on a second run | the field must not be a picture | `npm run test:browser` |
+| `docs/screenshots/06-cipher-field.png` | created | the report and the deck show the field as it really renders | read back after the capture |
+| `tools/build-deck.js` | a slide for the sign-in page, with the field on it | the deck must show what the reviewer sees first | the deck validation and the rendered slide |
+| `docs/report-draft/ch3-system-design.md` | WebGL in the browser requirement, and the cipher field as a stage of the build | the design chapter must carry the new front end | the report build |
+| `docs/report-draft/ch4-results.md` | TC-54 added, the counts corrected to twenty-six browser checks, and the field added as Figure 4.7 | the results chapter must match the runs | the report build and the contents check |
+| `docs/report-draft/appendices.md` | the raw browser output reproduced with the new line | the appendix is the raw record | the report build |
+| `docs/report-draft/ch5-conclusion.md` | the counts corrected and the cipher field described | the conclusion must not quote stale numbers | the report build |
+| `report/SecureShare-Project-Report.docx`, `report/SecureShare-Project-Report.pdf`, `report/SecureShare-REVIEW-3.pptx` | rebuilt | the deliverables must match the code | the deck validation and the measured contents page numbers |
