@@ -49,7 +49,7 @@ export function roundedRect(w, d, r) {
   return shape;
 }
 
-// A slab with a chamfer on its top edge, so the light finds the edge.
+// A slab with a chamfer on its top edge, sitting flush on y = 0.
 export function slabGeometry(w, d, h, bevel = 0.8, corner = 1.2) {
   const shape = roundedRect(w, d, corner);
   const geo = new THREE.ExtrudeGeometry(shape, {
@@ -61,7 +61,8 @@ export function slabGeometry(w, d, h, bevel = 0.8, corner = 1.2) {
     curveSegments: 6,
   });
   geo.rotateX(-Math.PI / 2);
-  geo.translate(0, h - bevel, 0);
+  geo.computeBoundingBox();
+  geo.translate(0, -geo.boundingBox.min.y, 0);
   geo.computeVertexNormals();
   return geo;
 }
@@ -108,26 +109,42 @@ export function mergeGeometries(geometries) {
 
 /* ---------------- the parts ---------------- */
 
-// A bench plate with a chamfer, a groove and screws at the corners.
-export function benchPlate(group, w, d, h, tones, cornerInset = 6) {
-  const plate = new THREE.Mesh(slabGeometry(w, d, h, 1.2, 3), tones.lo);
+// A stepped plinth under a bench so it sits firmly on the ground plane.
+export function plinth(group, w, d, tones) {
+  const lower = new THREE.Mesh(slabGeometry(w + 4, d + 4, 1.5, 0.35, 2.2), tones.lo);
+  lower.castShadow = true;
+  lower.receiveShadow = true;
+  group.add(lower);
+
+  const upper = new THREE.Mesh(slabGeometry(w + 1.5, d + 1.5, 1.1, 0.3, 1.8), tones.mid);
+  upper.position.y = 1.5;
+  upper.castShadow = true;
+  upper.receiveShadow = true;
+  group.add(upper);
+  return group;
+}
+
+// A bench plate with a chamfer, a groove and four feet resting on its plinth.
+export function benchPlate(group, w, d, h, tones, cornerInset = 5) {
+  const plate = new THREE.Mesh(slabGeometry(w, d, h, 0.9, 2.4), tones.lo);
   plate.castShadow = true;
   plate.receiveShadow = true;
   group.add(plate);
 
   // the groove: a sunken line round the inside of the plate
   const groove = new THREE.Mesh(
-    new THREE.BoxGeometry(w - cornerInset * 2, 0.25, d - cornerInset * 2),
+    new THREE.BoxGeometry(w - cornerInset * 2, 0.16, d - cornerInset * 2),
     tones.mid
   );
   groove.position.y = h - 0.02;
   group.add(groove);
 
-  // the feet
+  // four short feet under the bench plate, resting on top of the plinth
   for (const [x, z] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
-    const foot = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 4.2, 3, 16), tones.lo);
-    foot.position.set((x * (w / 2 - 8)), -h / 2 - 1.2, (z * (d / 2 - 8)));
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.8, 2.4, 16), tones.mid);
+    foot.position.set(x * (w / 2 - 5.5), -1.2, z * (d / 2 - 5.5));
     foot.castShadow = true;
+    foot.receiveShadow = true;
     group.add(foot);
   }
   return plate;
@@ -163,7 +180,7 @@ export function rulerStrip(group, w, d, y, tones, every = 4, minor = 2.4, major 
     const isMajor = Math.round((x + w / 2 - 3) / every) % 5 === 0;
     const len = isMajor ? major : minor;
     const g = new THREE.BoxGeometry(0.35, 0.12, len);
-    g.translate(x, y + 0.3, d / 2 - len / 2);
+    g.translate(x, y + 0.48, d / 2 - len / 2);
     tickGeoms.push(g);
   }
   const ticks = new THREE.Mesh(mergeGeometries(tickGeoms), tones.lo);
@@ -217,28 +234,32 @@ export function coilSpring(group, radius, coils, wire, length, tones) {
 
 // A bushing: a short tube that a shaft runs through.
 export function bushing(group, radius, height, tones) {
+  const wrap = new THREE.Group();
   const bush = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 16), tones.mid);
   bush.castShadow = true;
-  group.add(bush);
+  wrap.add(bush);
   const inner = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.62, radius * 0.62, height + 0.2, 16), tones.lo);
-  group.add(inner);
-  return bush;
+  wrap.add(inner);
+  group.add(wrap);
+  return wrap;
 }
 
 // A post with a collar at its foot, the way a guide pillar is made.
 export function guidePost(group, radius, height, tones) {
+  const wrap = new THREE.Group();
   const post = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 20), tones.mid);
   post.position.y = height / 2;
   post.castShadow = true;
-  group.add(post);
+  wrap.add(post);
   const collar = new THREE.Mesh(new THREE.CylinderGeometry(radius * 1.7, radius * 1.9, height * 0.09, 20), tones.lo);
   collar.position.y = height * 0.055;
   collar.castShadow = true;
-  group.add(collar);
+  wrap.add(collar);
   const cap = new THREE.Mesh(new THREE.CylinderGeometry(radius * 1.25, radius * 1.1, height * 0.04, 20), tones.hi);
   cap.position.y = height;
-  group.add(cap);
-  return post;
+  wrap.add(cap);
+  group.add(wrap);
+  return wrap;
 }
 
 // A label plate: a small chamfered plate with three rule lines, as printed text.
@@ -250,7 +271,7 @@ export function labelPlate(group, w, d, y, tones) {
   const lines = [];
   for (let i = 0; i < 3; i++) {
     const g = new THREE.BoxGeometry(w * (0.7 - i * 0.14), 0.12, 0.5);
-    g.translate(-w * (0.35 - i * 0.07), y + 0.4, -d * 0.18 + i * d * 0.18);
+    g.translate(-w * (0.35 - i * 0.07), y + 0.68, -d * 0.18 + i * d * 0.18);
     lines.push(g);
   }
   const rules = new THREE.Mesh(mergeGeometries(lines), tones.lo);
@@ -268,15 +289,14 @@ export function rail(group, length, y, tones, width = 3.4) {
   return bar;
 }
 
-// A hopper: an open box with a rim and a chute lip.
+// A hopper: an open box sitting on y = 0 with three walls and a top rim.
 export function hopper(group, w, d, wallH, tones) {
-  const floor = new THREE.Mesh(slabGeometry(w, d, 1.6, 0.4, 1), tones.mid);
-  floor.position.y = -wallH;
+  const floor = new THREE.Mesh(slabGeometry(w, d, 1.6, 0.4, 1), tones.lo);
   floor.receiveShadow = true;
   group.add(floor);
   const wall = (sx, sz, sw, sd) => {
-    const m = new THREE.Mesh(slabGeometry(sw, sd, wallH, 0.6, 1), tones.mid);
-    m.position.set(sx, -wallH, sz);
+    const m = new THREE.Mesh(slabGeometry(sw, sd, wallH, 0.45, 0.9), tones.mid);
+    m.position.set(sx, 0, sz);
     m.castShadow = true;
     m.receiveShadow = true;
     group.add(m);
@@ -284,9 +304,115 @@ export function hopper(group, w, d, wallH, tones) {
   wall(0, -d / 2 + 1, w, 2);
   wall(-w / 2 + 1, 0, 2, d);
   wall(w / 2 - 1, 0, 2, d);
-  // the rim: a thin lip round the top
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 1, 4, 4), tones.lo);
-  rim.visible = false;
-  group.add(rim);
+
+  // the rim: a chamfered top lip round the three walls
+  const rim = (sx, sz, sw, sd) => {
+    const m = new THREE.Mesh(slabGeometry(sw, sd, 1.0, 0.25, 0.8), tones.hi);
+    m.position.set(sx, wallH, sz);
+    m.castShadow = true;
+    group.add(m);
+  };
+  rim(0, -d / 2 + 1, w + 1.2, 2.8);
+  rim(-w / 2 + 1, 0, 2.8, d + 0.6);
+  rim(w / 2 - 1, 0, 2.8, d + 0.6);
   return group;
+}
+
+// A receiver tray: a sloped intake cradle leading onto a recessed paper bed
+// where the unwrapped readable file settles and is checked.
+export function receiverTray(group, w, d, tones) {
+  const base = new THREE.Mesh(slabGeometry(w, d, 1.6, 0.45, 1.4), tones.lo);
+  base.castShadow = true;
+  base.receiveShadow = true;
+  group.add(base);
+
+  // intake lip on the left where the capsule crosses in
+  const intake = new THREE.Mesh(slabGeometry(4.5, d - 2, 2.4, 0.4, 1), tones.mid);
+  intake.position.set(-w / 2 + 1.6, 0, 0);
+  intake.castShadow = true;
+  intake.receiveShadow = true;
+  group.add(intake);
+
+  // side guide rails keeping the unwrapped sheet aligned on the bed
+  for (const sz of [-(d / 2 - 1.6), d / 2 - 1.6]) {
+    const sideRail = new THREE.Mesh(slabGeometry(w - 3, 1.8, 2.8, 0.35, 0.8), tones.mid);
+    sideRail.position.set(1.2, 0, sz);
+    sideRail.castShadow = true;
+    sideRail.receiveShadow = true;
+    group.add(sideRail);
+  }
+
+  // backstop rim on the far right
+  const stop = new THREE.Mesh(slabGeometry(2, d - 2, 3.2, 0.35, 0.8), tones.hi);
+  stop.position.set(w / 2 - 1.2, 0, 0);
+  stop.castShadow = true;
+  group.add(stop);
+
+  // recessed paper bed inside the tray
+  const bed = new THREE.Mesh(slabGeometry(w - 7.5, d - 5.2, 0.5, 0.15, 0.8), tones.paper);
+  bed.position.set(1.8, 1.55, 0);
+  bed.receiveShadow = true;
+  group.add(bed);
+
+  // verification stamp block on the front-left corner of the tray
+  const stamp = new THREE.Mesh(slabGeometry(4.2, 4.2, 1.4, 0.25, 0.7), tones.hi);
+  stamp.position.set(-w / 2 + 3.2, 1.6, d / 2 - 3.6);
+  stamp.castShadow = true;
+  group.add(stamp);
+  return group;
+}
+
+// A press frame: two side rails and a back member, so a sheet can slide in
+// between them and be pressed from above instead of passing through a solid
+// plate.
+export function pressFrame(group, w, d, tones) {
+  const railWidth = 5;
+  for (const sz of [-(d / 2 - railWidth / 2), d / 2 - railWidth / 2]) {
+    const rail = new THREE.Mesh(slabGeometry(w, railWidth, 2.8, 0.6, 1.2), tones.lo);
+    rail.position.set(0, 0, sz);
+    rail.castShadow = true;
+    rail.receiveShadow = true;
+    group.add(rail);
+    // a rib along the top of each rail, so the frame is not a plain box
+    const rib = new THREE.Mesh(slabGeometry(w - 2, railWidth - 1.8, 0.6, 0.2, 0.8), tones.mid);
+    rib.position.set(0, 2.8, sz);
+    rib.castShadow = true;
+    group.add(rib);
+  }
+  const back = new THREE.Mesh(slabGeometry(3.4, d, 2.8, 0.6, 1), tones.lo);
+  back.position.set(w / 2 - 1.7, 0, 0);
+  back.castShadow = true;
+  back.receiveShadow = true;
+  group.add(back);
+  return group;
+}
+
+// The horizon: a drawn line on the floor where the ground stops, so the world
+// does not simply end. It is a pencil line, so the weather does not touch it.
+export function horizon(group, radius, tones) {
+  const line = new THREE.Mesh(
+    new THREE.TorusGeometry(radius, 0.9, 5, 180),
+    new THREE.MeshBasicMaterial({
+      color: tones.hi.color,
+      transparent: true,
+      opacity: 0.45,
+      fog: false,
+    })
+  );
+  line.rotation.x = Math.PI / 2;
+  line.position.y = 0.08;
+  // the line is drawn by hand, so it wanders a little
+  const position = line.geometry.attributes.position;
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const z = position.getZ(i);
+    const drift = Math.sin(Math.atan2(z, x) * 7.0) * 2.4 + Math.cos(Math.atan2(z, x) * 3.0) * 1.6;
+    const scale = 1 + drift / radius;
+    position.setXYZ(i, x * scale, y + Math.sin(Math.atan2(z, x) * 11.0) * 0.5, z * scale);
+  }
+  position.needsUpdate = true;
+  line.userData.smooth = true;
+  group.add(line);
+  return line;
 }
