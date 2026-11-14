@@ -1097,6 +1097,26 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
   border-color: var(--color-ink);
 }
 
+/* The settings dialog: the account, the phrase, the factor and the sessions. */
+.settings__block {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: var(--rule-hair) solid var(--color-rule);
+}
+
+.settings__block h4 {
+  margin: 0 0 var(--space-2xs);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}
+
 /* The code the phone's camera reads when it is enrolled. */
 .qr {
   width: 11rem;

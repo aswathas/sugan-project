@@ -10,23 +10,23 @@
 // contacted and the page needs no build step.
 
 import * as THREE from '/vendor/three.module.min.js';
+import * as P from './parts.js';
 
 const stage = document.getElementById('stage');
 const labelLayer = document.getElementById('labels');
 const readout = document.getElementById('readout');
-const stepBar = document.getElementById('steps');
 
 const css = getComputedStyle(document.documentElement);
 const tone = (name, fallback) => (css.getPropertyValue(name).trim() || fallback);
 
-const PAPER = tone('--paper', '#f2f2ef');
-const INK = tone('--ink', '#26262a');
-const MUTED = tone('--muted', '#8c8c90');
-const RULE = tone('--rule', '#d4d4d6');
-const FACE = tone('--face', '#ffffff');
-const TOP = tone('--top', '#f7f7f4');
-const SHADE = tone('--shade', '#dcdcd9');
-const ACCENT = tone('--accent', '#3e63dd');
+const PALETTE = {
+  lo: tone('--lo', '#dcdcd9'),
+  mid: tone('--mid', '#8a8a8f'),
+  hi: tone('--ink', '#26262a'),
+  lit: tone('--accent', '#3e63dd'),
+  paper: tone('--face', '#ffffff'),
+  brass: tone('--brass', '#c9a227'),
+};
 
 /* ---------------- the renderer ---------------- */
 
@@ -35,76 +35,131 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x000000, 0);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.02;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 stage.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(PAPER, 230, 420);
+scene.fog = new THREE.Fog(tone('--paper', '#f2f2ef'), 240, 430);
 
-const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.5, 600);
-camera.position.set(0, 50, 168);
-camera.lookAt(0, 7, 0);
+const camera = new THREE.PerspectiveCamera(36, window.innerWidth / window.innerHeight, 0.5, 600);
+camera.position.set(0, 46, 158);
+camera.lookAt(0, 11, 0);
+
+const T = P.toneSet(PALETTE);
 
 /* ---------------- the light ---------------- */
 
-const sun = new THREE.DirectionalLight(0xffffff, 2.6);
-sun.position.set(-60, 110, 70);
+const sun = new THREE.DirectionalLight(0xffffff, 2.4);
+sun.position.set(-70, 120, 80);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.near = 20;
-sun.shadow.camera.far = 320;
-sun.shadow.camera.left = -150;
-sun.shadow.camera.right = 150;
-sun.shadow.camera.top = 90;
-sun.shadow.camera.bottom = -90;
-sun.shadow.bias = -0.0008;
+sun.shadow.camera.near = 40;
+sun.shadow.camera.far = 340;
+sun.shadow.camera.left = -170;
+sun.shadow.camera.right = 170;
+sun.shadow.camera.top = 110;
+sun.shadow.camera.bottom = -110;
+sun.shadow.bias = -0.0006;
+sun.shadow.normalBias = 0.02;
 scene.add(sun);
-scene.add(new THREE.HemisphereLight(0xffffff, SHADE, 1.15));
-const fill = new THREE.DirectionalLight(0xffffff, 0.5);
-fill.position.set(90, 40, -60);
-scene.add(fill);
+scene.add(new THREE.HemisphereLight(0xffffff, PALETTE.lo, 1.05));
+const rim = new THREE.DirectionalLight(0xffffff, 0.45);
+rim.position.set(110, 46, -70);
+scene.add(rim);
 
-/* ---------------- the materials ---------------- */
+/* ---------------- the ground ---------------- */
 
-const paperMat = new THREE.MeshStandardMaterial({ color: FACE, roughness: 0.92, metalness: 0 });
-const groundMat = new THREE.MeshStandardMaterial({ color: SHADE, roughness: 1, metalness: 0 });
-const islandMat = new THREE.MeshStandardMaterial({ color: FACE, roughness: 0.88, metalness: 0 });
-const inkMat = new THREE.MeshStandardMaterial({ color: INK, roughness: 0.55, metalness: 0.15 });
-const midMat = new THREE.MeshStandardMaterial({ color: MUTED, roughness: 0.6, metalness: 0.25 });
-const ruleMat = new THREE.MeshStandardMaterial({ color: RULE, roughness: 0.9, metalness: 0 });
-const accentMat = new THREE.MeshStandardMaterial({ color: ACCENT, roughness: 0.4, metalness: 0.2 });
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(620, 320),
+  new THREE.MeshStandardMaterial({ color: tone('--shade', '#e6e5e0'), roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
 
-/* ---------------- the textures ---------------- */
+/* ---------------- the benches ---------------- */
 
-// A number the seed makes repeatable, so every reload draws the same scene.
-function seeded(seed) {
-  let s = seed;
-  return () => {
-    s = (s * 1103515245 + 12345) & 0x7fffffff;
-    return s / 0x7fffffff;
-  };
+const ISLAND = 2.6;
+
+// A bench top: a chamfered plate on four feet, with a groove, corner screws,
+// a ruler strip and a label plate. Every bench on this scene is built this way.
+function bench(w, d) {
+  const group = new THREE.Group();
+  P.benchPlate(group, w, d, ISLAND, T, 7);
+  P.screwCorners(group, w, d, ISLAND, T, 6, 1.2);
+  P.rulerStrip(group, w - 14, 7, ISLAND + 0.1, T, 5, 2.2, 4);
+  P.labelPlate(group, 26, 11, ISLAND + 0.1, T);
+  scene.add(group);
+  return group;
 }
 
-// The readable sheet: a page of a document.
+const senderBench = bench(84, 50);
+senderBench.position.set(-66, ISLAND / 2, 0);
+const serverBench = bench(60, 50);
+serverBench.position.set(0, ISLAND / 2, 0);
+const recipientBench = bench(84, 50);
+recipientBench.position.set(66, ISLAND / 2, 0);
+
+const BENCH_TOP = ISLAND;
+
+/* ---------------- the trust boundary ---------------- */
+
+// A low kerb and a row of pointed pickets: the line the server cannot cross.
+function boundary(x) {
+  const group = new THREE.Group();
+  const postGeoms = [];
+  for (let z = -22; z <= 22; z += 7.3) {
+    const picket = new THREE.BoxGeometry(1.5, 13, 1.5);
+    picket.translate(0, 6.5, z);
+    postGeoms.push(picket);
+    const tip = new THREE.ConeGeometry(1.05, 2.2, 4);
+    tip.rotateY(Math.PI / 4);
+    tip.translate(0, 14.1, z);
+    postGeoms.push(tip);
+  }
+  const pickets = new THREE.Mesh(P.mergeGeometries(postGeoms), T.hi);
+  pickets.castShadow = true;
+  group.add(pickets);
+
+  const rail = new THREE.Mesh(P.slabGeometry(3, 48, 2.4, 0.6, 1), T.mid);
+  rail.position.y = 11.4;
+  rail.castShadow = true;
+  group.add(rail);
+
+  // the kerb on the floor, so the line reads where nothing is drawn
+  const kerb = new THREE.Mesh(P.slabGeometry(4, 48, 1.1, 0.3, 0.8), T.lo);
+  kerb.position.y = 0.55;
+  kerb.receiveShadow = true;
+  group.add(kerb);
+
+  group.position.x = x;
+  scene.add(group);
+  return group;
+}
+const boundaryLeft = boundary(-33);
+const boundaryRight = boundary(33);
+
+/* ---------------- the sheet: the readable file ---------------- */
+
 function sheetTexture() {
   const c = document.createElement('canvas');
   c.width = 512;
   c.height = 340;
   const g = c.getContext('2d');
-  g.fillStyle = FACE;
+  g.fillStyle = PALETTE.paper;
   g.fillRect(0, 0, c.width, c.height);
-  g.fillStyle = INK;
-  g.fillRect(36, 40, 210, 16);
-  g.fillStyle = MUTED;
-  const rand = seeded(7);
-  for (let i = 0; i < 13; i++) {
-    const y = 84 + i * 19;
-    const w = 120 + Math.round(rand() * 300);
-    g.fillStyle = i % 4 === 3 ? MUTED : INK;
-    g.globalAlpha = i % 4 === 3 ? 0.35 : 0.72;
-    g.fillRect(36, y, w, 7);
+  g.fillStyle = PALETTE.hi;
+  g.fillRect(34, 38, 190, 14);
+  let seed = 7;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  for (let i = 0; i < 12; i++) {
+    const y = 80 + i * 19;
+    const w = 110 + Math.round(rand() * 290);
+    g.globalAlpha = i % 4 === 3 ? 0.28 : 0.68;
+    g.fillStyle = PALETTE.hi;
+    g.fillRect(34, y, w, 6);
   }
   g.globalAlpha = 1;
   const tex = new THREE.CanvasTexture(c);
@@ -113,20 +168,28 @@ function sheetTexture() {
   return tex;
 }
 
-// The capsule: ciphertext, which is not readable.
+const sheetMat = new THREE.MeshStandardMaterial({ map: sheetTexture(), roughness: 0.92, metalness: 0 });
+const sheet = new THREE.Mesh(P.slabGeometry(34, 24, 0.9, 0.25, 0.8), sheetMat);
+sheet.castShadow = true;
+sheet.receiveShadow = true;
+scene.add(sheet);
+
+/* ---------------- the capsule: the sealed file ---------------- */
+
 function capsuleTexture() {
   const c = document.createElement('canvas');
   c.width = 256;
   c.height = 128;
   const g = c.getContext('2d');
-  g.fillStyle = INK;
+  g.fillStyle = PALETTE.hi;
   g.fillRect(0, 0, c.width, c.height);
-  const rand = seeded(19);
-  for (let i = 0; i < 90; i++) {
+  let seed = 19;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  for (let i = 0; i < 110; i++) {
     const x = Math.floor(rand() * 32) * 8;
     const y = Math.floor(rand() * 16) * 8;
     g.fillStyle = rand() > 0.5 ? '#ffffff' : '#000000';
-    g.globalAlpha = 0.05 + rand() * 0.18;
+    g.globalAlpha = 0.04 + rand() * 0.14;
     g.fillRect(x, y, 8, 8);
   }
   g.globalAlpha = 1;
@@ -135,136 +198,33 @@ function capsuleTexture() {
   return tex;
 }
 
-// The public key plate: a key and a fingerprint, engraved.
-function plateTexture() {
-  const c = document.createElement('canvas');
-  c.width = 512;
-  c.height = 320;
-  const g = c.getContext('2d');
-  g.fillStyle = '#00000000';
-  g.clearRect(0, 0, c.width, c.height);
-  g.strokeStyle = INK;
-  g.lineWidth = 7;
-  g.beginPath();
-  g.arc(120, 160, 44, 0, Math.PI * 2);
-  g.stroke();
-  g.beginPath();
-  g.moveTo(164, 160);
-  g.lineTo(330, 160);
-  g.stroke();
-  g.beginPath();
-  g.moveTo(300, 160);
-  g.lineTo(300, 208);
-  g.moveTo(334, 160);
-  g.lineTo(334, 200);
-  g.stroke();
-  g.fillStyle = INK;
-  g.font = '600 30px ui-monospace, Menlo, monospace';
-  g.fillText('PUBLIC KEY', 176, 120);
-  g.font = '22px ui-monospace, Menlo, monospace';
-  g.globalAlpha = 0.6;
-  g.fillText('SHA-256  9f2c…a41d', 176, 260);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
+const capsuleMat = new THREE.MeshStandardMaterial({
+  map: capsuleTexture(),
+  roughness: 0.42,
+  metalness: 0.35,
+});
 
-/* ---------------- the parts ---------------- */
-
-function box(w, h, d, material, x, y, z, parent = scene) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
-  mesh.position.set(x, y, z);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  parent.add(mesh);
-  return mesh;
-}
-
-// The ground everything stands on.
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(520, 260), groundMat);
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
-scene.add(ground);
-
-// The three islands: the sender's browser, the server, the recipient's browser.
-const ISLAND_Y = 2.2;
-const senderIsland = box(78, ISLAND_Y, 46, islandMat, -62, ISLAND_Y / 2, 0);
-const serverPlinth = box(56, ISLAND_Y, 46, islandMat, 0, ISLAND_Y / 2, 0);
-const recipientIsland = box(78, ISLAND_Y, 46, islandMat, 62, ISLAND_Y / 2, 0);
-
-// The trust boundary: a fence between each browser and the server.
-// A hatch on the floor, so the boundary reads even where it is not drawn.
-function hatchTexture() {
-  const c = document.createElement('canvas');
-  c.width = 64;
-  c.height = 64;
-  const g = c.getContext('2d');
-  g.clearRect(0, 0, 64, 64);
-  g.strokeStyle = INK;
-  g.globalAlpha = 0.5;
-  g.lineWidth = 5;
-  for (let i = -64; i < 128; i += 16) {
-    g.beginPath();
-    g.moveTo(i, 0);
-    g.lineTo(i + 64, 64);
-    g.stroke();
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(2, 12);
-  return tex;
-}
-
-function fence(x) {
-  const group = new THREE.Group();
-  const slatMat = new THREE.MeshStandardMaterial({ color: INK, roughness: 0.6, metalness: 0.2 });
-  for (let z = -21; z <= 21; z += 6) {
-    const slat = box(1.1, 15, 1.1, slatMat, 0, ISLAND_Y + 7.5, z, group);
-    slat.castShadow = false;
-  }
-  const rail = box(1.5, 1.4, 48, inkMat, 0, ISLAND_Y + 14.6, 0, group);
-  rail.castShadow = false;
-  group.position.x = x;
-  scene.add(group);
-
-  const band = new THREE.Mesh(
-    new THREE.PlaneGeometry(9, 46),
-    new THREE.MeshStandardMaterial({ map: hatchTexture(), transparent: true, roughness: 1 })
-  );
-  band.rotation.x = -Math.PI / 2;
-  band.position.set(x, 0.06, 0);
-  scene.add(band);
-  return group;
-}
-const fenceLeft = fence(-31);
-const fenceRight = fence(31);
-
-// The sheet: the file, readable.
-const sheetMat = new THREE.MeshStandardMaterial({ map: sheetTexture(), roughness: 0.9, metalness: 0 });
-const sheet = box(34, 0.9, 24, sheetMat, -92, ISLAND_Y + 0.45, 0);
-sheet.rotation.y = -0.06;
-
-// The capsule: the sealed file.
 function makeCapsule() {
   const group = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ map: capsuleTexture(), roughness: 0.45, metalness: 0.3 });
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(3.7, 3.7, 17, 20, 1, false), mat);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(3.7, 3.7, 17, 24, 1, false), capsuleMat);
   body.rotation.z = Math.PI / 2;
   body.castShadow = true;
   group.add(body);
   for (const side of [-1, 1]) {
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(3.7, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(3.7, 24, 14, 0, Math.PI * 2, 0, Math.PI / 2), capsuleMat);
     cap.rotation.z = (side * Math.PI) / 2;
     cap.position.x = side * 8.5;
     cap.castShadow = true;
     group.add(cap);
   }
-  // the band that holds it shut
-  const band = new THREE.Mesh(new THREE.TorusGeometry(3.9, 0.5, 8, 24), accentMat);
-  band.rotation.y = Math.PI / 2;
-  band.castShadow = true;
-  group.add(band);
+  // the two bands that hold it shut
+  for (const x of [-4.4, 4.4]) {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(3.85, 0.55, 8, 26), T.mid);
+    band.rotation.y = Math.PI / 2;
+    band.position.x = x;
+    band.castShadow = true;
+    group.add(band);
+  }
   scene.add(group);
   return group;
 }
@@ -272,108 +232,243 @@ const capsule = makeCapsule();
 capsule.visible = false;
 
 // The wrapped key: the tag that rides with the capsule.
-const wrappedKey = box(11, 1.6, 8, midMat, 0, 0, 0);
-wrappedKey.visible = false;
+const wrappedKey = new THREE.Group();
+{
+  const tag = new THREE.Mesh(P.slabGeometry(11, 8, 1.4, 0.3, 1), T.mid);
+  tag.castShadow = true;
+  wrappedKey.add(tag);
+  const shackle = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.4, 6, 14), T.hi);
+  shackle.rotation.x = Math.PI / 2;
+  shackle.position.set(0, 0.9, 3.6);
+  wrappedKey.add(shackle);
+  wrappedKey.visible = false;
+  scene.add(wrappedKey);
+}
 
-// The seal: the press that makes the capsule.
+/* ---------------- the press ---------------- */
+
+// The seal: a bench press with guide posts, a beam, a head on bearing arms, a
+// die that does the sealing, a knurled key dial, a pointer and a return spring.
 function makePress() {
   const group = new THREE.Group();
-  const postGeo = new THREE.BoxGeometry(5, 34, 5);
-  for (const z of [-13, 13]) {
-    const post = new THREE.Mesh(postGeo, midMat);
-    post.position.set(0, 17, z);
-    post.castShadow = true;
-    group.add(post);
-    const foot = new THREE.Mesh(new THREE.BoxGeometry(11, 2.6, 11), ruleMat);
-    foot.position.set(0, 1.3, z);
-    foot.castShadow = true;
-    group.add(foot);
+  const base = new THREE.Group();
+
+  const plate = new THREE.Mesh(P.slabGeometry(30, 34, 3.4, 0.9, 2), T.lo);
+  plate.castShadow = true;
+  plate.receiveShadow = true;
+  base.add(plate);
+  P.screwCorners(base, 30, 34, 3.4, T, 3.5, 1);
+  // the die seat: a raised block the sheet is pressed into
+  const seat = new THREE.Mesh(P.slabGeometry(16, 16, 1.8, 0.6, 1.2), T.mid);
+  seat.position.y = 4.2;
+  seat.castShadow = true;
+  seat.receiveShadow = true;
+  base.add(seat);
+  group.add(base);
+
+  // two guide posts with collars, and the beam they carry
+  for (const z of [-12, 12]) {
+    const post = P.guidePost(base, 1.9, 30, T);
+    post.position.set(-11, 3.4, z);
+    const bush = P.bushing(base, 2.6, 4, T);
+    bush.position.set(-11, 22, z);
   }
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(7, 5, 32), midMat);
-  beam.position.set(0, 35, 0);
+  const beam = new THREE.Mesh(P.slabGeometry(9, 30, 5.5, 0.8, 1.2), T.mid);
+  beam.position.set(-11, 33.4, 0);
   beam.castShadow = true;
-  group.add(beam);
+  base.add(beam);
+  const beamTop = new THREE.Mesh(P.slabGeometry(6, 22, 1.2, 0.4, 0.8), T.lo);
+  beamTop.position.set(-11, 38.9, 0);
+  base.add(beamTop);
+
+  // the head: a block on two bearing arms, with the die under it
   const head = new THREE.Group();
-  const block = new THREE.Mesh(new THREE.BoxGeometry(9, 6, 11), inkMat);
+  const block = new THREE.Mesh(P.slabGeometry(11, 15, 7, 1, 1.4), T.hi);
   block.castShadow = true;
   head.add(block);
-  const die = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 3, 20), accentMat);
-  die.position.y = -4.5;
+  for (const z of [-9.5, 9.5]) {
+    const arm = new THREE.Mesh(P.slabGeometry(5, 4, 3.6, 0.7, 0.9), T.mid);
+    arm.position.set(0, 0.4, z);
+    arm.castShadow = true;
+    head.add(arm);
+  }
+  const die = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 3.4, 3.4, 24), T.lit);
+  die.position.y = -5;
   die.castShadow = true;
   head.add(die);
-  head.position.set(0, 27, 0);
-  group.add(head);
-  group.position.set(-62, ISLAND_Y, 0);
+  const dieRing = new THREE.Mesh(new THREE.TorusGeometry(3.3, 0.3, 6, 26), T.mid);
+  dieRing.rotation.x = Math.PI / 2;
+  dieRing.position.y = -3.5;
+  head.add(dieRing);
+  head.position.set(-11, 25, 0);
+  base.add(head);
+
+  // the key dial: a knurled knob with a pointer, on a plinth
+  const dial = new THREE.Group();
+  const plinth = new THREE.Mesh(P.slabGeometry(14, 8, 3.6, 0.8, 1), T.mid);
+  plinth.castShadow = true;
+  dial.add(plinth);
+  const knob = P.knurledKnob(dial, 4.6, 3.4, T, 34);
+  knob.position.set(0, 5.2, 0);
+  const pointer = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 6.4), T.hi);
+  pointer.position.set(0, 7.1, 2.2);
+  pointer.castShadow = true;
+  dial.add(pointer);
+  dial.position.set(4, 3.4, 13);
+  base.add(dial);
+
+  // the return spring under the head
+  const spring = P.coilSpring(base, 2.6, 9, 0.42, 9, T);
+  spring.position.set(4.6, 5, -13);
+
+  group.position.set(-70, BENCH_TOP, 0);
   scene.add(group);
-  return { group, head };
+  return { group, head, dial, pointer };
 }
 const press = makePress();
 
-// The key box: where the private key lives.
+/* ---------------- the key boxes ---------------- */
+
+// Where the private key lives: a chamfered box with a hinged lid, a brass
+// latch and a key on a ring inside.
 function makeKeyBox(x, z) {
   const group = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(17, 9, 13), inkMat);
-  body.position.y = 4.5;
+  const body = new THREE.Mesh(P.slabGeometry(18, 13, 9, 0.8, 1.6), T.hi);
   body.castShadow = true;
   body.receiveShadow = true;
   group.add(body);
+  const inner = new THREE.Mesh(P.slabGeometry(15, 10, 1, 0.4, 1.2), T.lo);
+  inner.position.y = 8.6;
+  group.add(inner);
+
   const lid = new THREE.Group();
-  const lidMesh = new THREE.Mesh(new THREE.BoxGeometry(17, 1.6, 13), midMat);
-  lidMesh.position.set(0, 0, -6.4);
+  const lidMesh = new THREE.Mesh(P.slabGeometry(18, 13, 1.6, 0.6, 1.6), T.mid);
+  lidMesh.position.set(0, 0, -6);
   lidMesh.castShadow = true;
   lid.add(lidMesh);
-  lid.position.set(0, 9, 6.4);
+  const hinge = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 16, 10), T.mid);
+  hinge.rotation.z = Math.PI / 2;
+  hinge.position.set(0, 0.4, -6.4);
+  lid.add(hinge);
+  lid.position.set(0, 9.6, 6.4);
   group.add(lid);
-  const key = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 9, 12), accentMat);
-  key.rotation.z = Math.PI / 2;
-  key.position.set(0, 9.6, 0);
+
+  const latch = new THREE.Mesh(P.slabGeometry(4, 2.4, 3, 0.4, 0.6), T.brass);
+  latch.position.set(0, 7.4, 6.4);
+  latch.castShadow = true;
+  group.add(latch);
+
+  const key = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 9, 10), T.brass);
+  shaft.rotation.z = Math.PI / 2;
+  key.add(shaft);
+  const bow = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.5, 6, 16), T.brass);
+  bow.rotation.y = Math.PI / 2;
+  bow.position.x = -5.2;
+  key.add(bow);
+  const bit = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.6, 0.6), T.brass);
+  bit.position.set(4.2, -1.2, 0);
+  key.add(bit);
+  key.position.set(0, 10.2, 0);
   key.visible = false;
   group.add(key);
-  group.position.set(x, ISLAND_Y, z);
+
+  group.position.set(x, BENCH_TOP, z);
   scene.add(group);
   return { group, lid, key };
 }
-const senderKey = makeKeyBox(-72, 17);
-const recipientKey = makeKeyBox(72, 17);
+const senderKey = makeKeyBox(-74, 16);
+const recipientKey = makeKeyBox(74, 16);
 
-// The public key plate on the server.
-const plateTex = plateTexture();
-const plate = new THREE.Mesh(
-  new THREE.PlaneGeometry(22, 13),
-  new THREE.MeshStandardMaterial({ map: plateTex, transparent: true, roughness: 0.7 })
-);
-plate.rotation.x = -Math.PI / 2;
-plate.position.set(0, ISLAND_Y + 0.05, 15);
-scene.add(plate);
+/* ---------------- the server ---------------- */
 
-// The hopper: the server's store, open at the top.
-function makeHopper() {
-  const group = new THREE.Group();
-  const wallH = 15;
-  const w = 44;
-  const d = 30;
-  const wall = (x, z, sw, sd) => {
-    const m = box(sw, wallH, sd, midMat, x, wallH / 2, z, group);
-    m.receiveShadow = true;
-  };
-  wall(0, -d / 2, w, 1.6);
-  wall(-w / 2, 0, 1.6, d);
-  wall(w / 2, 0, 1.6, d);
-  const floor = box(w, 1.6, d, paperMat, 0, 0.8, 0, group);
-  floor.receiveShadow = true;
-  group.position.set(0, ISLAND_Y, 0);
-  scene.add(group);
-  return group;
+// The public key plate, engraved.
+const plate = new THREE.Group();
+{
+  const plateMesh = new THREE.Mesh(P.slabGeometry(24, 15, 0.9, 0.3, 1.2), T.mid);
+  plateMesh.castShadow = true;
+  plateMesh.receiveShadow = true;
+  plate.add(plateMesh);
+
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 320;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, c.width, c.height);
+  g.strokeStyle = PALETTE.hi;
+  g.lineWidth = 9;
+  g.beginPath();
+  g.arc(120, 160, 46, 0, Math.PI * 2);
+  g.stroke();
+  g.beginPath();
+  g.moveTo(166, 160);
+  g.lineTo(340, 160);
+  g.stroke();
+  g.beginPath();
+  g.moveTo(306, 160);
+  g.lineTo(306, 212);
+  g.moveTo(340, 160);
+  g.lineTo(340, 202);
+  g.stroke();
+  g.fillStyle = PALETTE.hi;
+  g.font = '600 34px ui-monospace, Menlo, monospace';
+  g.fillText('PUBLIC KEY', 182, 118);
+  g.font = '24px ui-monospace, Menlo, monospace';
+  g.globalAlpha = 0.6;
+  g.fillText('SHA-256  9f2c…a41d', 182, 268);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const engraving = new THREE.Mesh(
+    new THREE.PlaneGeometry(24, 15),
+    new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.8 })
+  );
+  engraving.rotation.x = -Math.PI / 2;
+  engraving.position.y = 0.95;
+  plate.add(engraving);
+  P.screwCorners(plate, 24, 15, 0.9, T, 2, 0.9);
+  plate.position.set(0, BENCH_TOP + 0.9, 16);
+  scene.add(plate);
 }
-const hopper = makeHopper();
+
+// The hopper: the store. An open box with a rim, a chute lip and a card slot
+// that shows the share record, the way a server would show one.
+const hopper = new THREE.Group();
+{
+  const walls = new THREE.Group();
+  P.hopper(walls, 46, 30, 15, T);
+  hopper.add(walls);
+
+  // the chute lip the capsule comes in over
+  const lip = new THREE.Mesh(P.slabGeometry(10, 30, 3.4, 0.8, 1.2), T.mid);
+  lip.position.set(-25, 0, 0);
+  lip.castShadow = true;
+  hopper.add(lip);
+
+  // the card slot: the record of what is held
+  const card = new THREE.Mesh(P.slabGeometry(20, 9, 0.5, 0.2, 0.6), T.paper);
+  card.position.set(6, 15.4, 12.5);
+  card.rotation.x = -0.35;
+  hopper.add(card);
+  const cardGeoms = [];
+  for (let i = 0; i < 4; i++) {
+    const line = new THREE.BoxGeometry(13 - i * 2.4, 0.12, 0.7);
+    line.translate(-2, 15.7, 12.5 - 1.6 + i * 1.6);
+    cardGeoms.push(line);
+  }
+  const cardLines = new THREE.Mesh(P.mergeGeometries(cardGeoms), T.lo);
+  hopper.add(cardLines);
+
+  hopper.position.set(0, BENCH_TOP, 0);
+  scene.add(hopper);
+}
 
 // The capsules the server already holds.
 const stored = [];
 for (let i = 0; i < 3; i++) {
   const c = makeCapsule();
-  c.scale.setScalar(0.82);
-  c.position.set(-8 + i * 8, ISLAND_Y + 2.6 + i * 0.6, -6);
-  c.rotation.y = 0.2 * i - 0.2;
+  c.scale.setScalar(0.8);
+  c.position.set(-8 + i * 8.5, BENCH_TOP + 2.4 + i * 0.4, -5);
+  c.rotation.y = 0.18 * i - 0.18;
   stored.push(c);
 }
 
@@ -389,7 +484,6 @@ function addLabel(text, sub, kind, anchor, offset) {
   return el;
 }
 
-// A marker on the bench, so a label can sit where the drawing is clear.
 function marker(x, y, z) {
   const m = new THREE.Object3D();
   m.position.set(x, y, z);
@@ -397,16 +491,16 @@ function marker(x, y, z) {
   return m;
 }
 
-const zoneSender = addLabel('Your browser', '', 'zone', marker(-62, ISLAND_Y, 25), 4);
-const zoneServer = addLabel('The server', '', 'zone', marker(0, ISLAND_Y, 25), 4);
-const zoneRecipient = addLabel("Their browser", '', 'zone', marker(62, ISLAND_Y, 25), 4);
-const labelSheet = addLabel('the file, readable', 'it only exists here', 'key', sheet, 26);
-const labelCapsule = addLabel('ciphertext', 'sealed, unreadable', 'key', capsule, 18);
-const labelKeyBox = addLabel('the private key', 'never leaves this device', 'key', senderKey.group, 22);
-const labelKeyBox2 = addLabel('the private key', 'never leaves this device', 'key', recipientKey.group, 22);
-const labelPlate = addLabel('the public key', 'the server holds this too', 'key', plate, 20);
-const labelWallL = addLabel('the trust boundary', 'only ciphertext crosses this', 'wall', marker(-31, ISLAND_Y, 25), 10);
-const labelWallR = addLabel('the trust boundary', '', 'wall', marker(31, ISLAND_Y, 25), 10);
+addLabel('Your browser', '', 'zone', marker(-66, BENCH_TOP, 26), 6);
+addLabel('The server', '', 'zone', marker(0, BENCH_TOP, 26), 6);
+addLabel("Their browser", '', 'zone', marker(66, BENCH_TOP, 26), 6);
+const labelSheet = addLabel('the file, readable', 'it only exists here', 'key', sheet, 22);
+const labelCapsule = addLabel('ciphertext', 'sealed, unreadable', 'key', capsule, 16);
+addLabel('the private key', 'never leaves this device', 'key', senderKey.group, 22);
+addLabel('the private key', 'never leaves this device', 'key', recipientKey.group, 22);
+addLabel('the public key', 'the server holds this too', 'key', plate, 18);
+addLabel('the trust boundary', 'only ciphertext crosses this', 'wall', marker(-33, BENCH_TOP, 25), 8);
+addLabel('the trust boundary', '', 'wall', marker(33, BENCH_TOP, 25), 8);
 
 function placeLabels() {
   const w = window.innerWidth;
@@ -418,8 +512,7 @@ function placeLabels() {
     p.project(camera);
     const x = (p.x * 0.5 + 0.5) * w;
     const y = (-p.y * 0.5 + 0.5) * h;
-    const behind = p.z > 1;
-    item.el.style.opacity = behind ? '0' : '1';
+    item.el.style.opacity = p.z > 1 ? '0' : '1';
     item.el.style.transform = `translate(-50%, -100%) translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
   }
 }
@@ -434,17 +527,14 @@ const STEPS = [
   'The capsule comes back out. The server had no way to read it.',
   'Their private key unwraps it. The fingerprint matches. It is the file you sent.',
 ];
-const stepEl = document.createElement('div');
-stepEl.className = 'steps';
+const stepBar = document.getElementById('steps');
 const stepMarks = STEPS.map(() => {
   const i = document.createElement('i');
-  stepEl.appendChild(i);
+  stepBar.appendChild(i);
   return i;
 });
-document.getElementById('steps').appendChild(stepEl);
 
-const LOOP = 17;
-let step = 0;
+let step = -1;
 function setStep(index) {
   if (index === step) return;
   step = index;
@@ -454,53 +544,55 @@ function setStep(index) {
 setStep(0);
 
 const ease = (t) => t * t * (3 - 2 * t);
-const clamp01 = (t) => Math.min(1, Math.max(0, t));
-const span = (t, from, to) => clamp01((t - from) / (to - from));
+const span = (t, from, to) => Math.min(1, Math.max(0, (t - from) / (to - from)));
 
-// Where things are at a point in the loop.
+const SHEET_START = -92;
+const PRESS_X = -70;
+
 function sheetX(t) {
-  return -92 + (-62 + 92) * ease(span(t, 1.4, 2.8));
+  return SHEET_START + (PRESS_X - SHEET_START) * ease(span(t, 1.4, 2.8));
 }
 function capsuleX(t) {
-  if (t < 3.0) return -62;
-  if (t < 5.4) return -62 + (0 + 62) * ease(span(t, 3.0, 5.4));
+  if (t < 3.0) return PRESS_X - 8;
+  if (t < 5.4) return PRESS_X - 8 + (0 - (PRESS_X - 8)) * ease(span(t, 3.0, 5.4));
   if (t < 6.6) return 0;
-  if (t < 9.4) return 0 + (56 - 0) * ease(span(t, 7.6, 9.4));
+  if (t < 9.4) return 56 * ease(span(t, 7.6, 9.4));
   return 56;
 }
 function capsuleY(t) {
-  if (t < 5.4) return ISLAND_Y + 4.6;
-  if (t < 6.6) return ISLAND_Y + 4.6 - (4.6 - 2.6) * ease(span(t, 5.4, 6.2));
-  if (t < 7.6) return ISLAND_Y + 2.6;
-  if (t < 9.4) return ISLAND_Y + 2.6 + 2 * ease(span(t, 7.6, 8.4));
-  return ISLAND_Y + 4.6;
+  if (t < 5.4) return BENCH_TOP + 5.4;
+  if (t < 6.6) return BENCH_TOP + 5.4 - 3 * ease(span(t, 5.4, 6.2));
+  if (t < 7.6) return BENCH_TOP + 2.4;
+  if (t < 9.4) return BENCH_TOP + 2.4 + 3 * ease(span(t, 7.6, 8.4));
+  return BENCH_TOP + 5.4;
 }
 
 let sealed = false;
 let opened = false;
 
 function update(t) {
-  const time = t % LOOP;
+  const time = t % 17;
 
-  // The sheet is readable until the press closes on it.
+  // the sheet is readable until the press closes on it
   const sealing = span(time, 1.4, 2.8);
   sheet.visible = time < 3.0;
   if (sheet.visible) {
-    sheet.position.x = sheetX(time);
-    sheet.position.y = ISLAND_Y + 0.45;
-    sheet.rotation.z = -0.05 * (1 - sealing);
+    sheet.position.set(sheetX(time), BENCH_TOP + 0.45, 0);
+    sheet.rotation.y = -0.05 * (1 - sealing);
   }
 
-  // The press head comes down while the sheet is under it.
+  // the head comes down on the sheet, and the key dial turns with it
   const headDown = span(time, 2.2, 2.7);
-  press.head.position.y = 27 - 8 * ease(headDown) + (time > 3 ? 8 * ease(span(time, 3.0, 3.6)) : 0);
+  const headUp = time > 3 ? span(time, 3.0, 3.6) : 0;
+  press.head.position.y = 25 - 8 * ease(headDown) + 8 * ease(headUp);
+  press.dial.rotation.y = -ease(sealing) * Math.PI * 1.5;
+  press.pointer.rotation.y = -ease(sealing) * Math.PI * 1.5;
 
-  // The capsule exists from the moment the seal closes.
+  // the capsule exists from the moment the seal closes
   const isSealed = time >= 2.9 && time < 12.4;
   if (isSealed !== sealed) {
     sealed = isSealed;
     capsule.visible = sealed;
-    wrappedKey.visible = sealed && time > 3.4;
   }
   if (capsule.visible) {
     capsule.position.set(capsuleX(time), capsuleY(time), 0);
@@ -508,31 +600,29 @@ function update(t) {
     const tag = time > 3.4 && time < 9.6;
     wrappedKey.visible = tag;
     if (tag) {
-      wrappedKey.position.set(capsule.position.x, capsule.position.y - 5.4, 0);
+      wrappedKey.position.set(capsule.position.x, capsule.position.y - 5.6, 0);
       wrappedKey.rotation.y = capsule.rotation.y;
     }
   }
 
-  // The recipient's key box opens when the capsule arrives.
+  // the recipient's key box opens when the capsule arrives
   const openAmount = ease(span(time, 9.6, 10.4));
   recipientKey.lid.rotation.x = -openAmount * 1.9;
   recipientKey.key.visible = openAmount > 0.05;
-  recipientKey.key.position.y = 9.6 + openAmount * 3;
-  senderKey.lid.rotation.x = -0.25;
+  recipientKey.key.position.y = 10.2 + openAmount * 3.4;
+  recipientKey.key.rotation.y = openAmount * 0.8;
 
-  // At the end the capsule opens into a readable sheet again.
+  // at the end the capsule opens into a readable sheet again
   const isOpen = time >= 10.2 && time < 14.2;
   if (isOpen !== opened) {
     opened = isOpen;
     sheet.visible = isOpen;
   }
   if (isOpen) {
-    sheet.position.x = 56 + 10 * ease(span(time, 10.2, 10.9));
-    sheet.position.y = ISLAND_Y + 0.45;
+    sheet.position.set(56 + 12 * ease(span(time, 10.2, 10.9)), BENCH_TOP + 0.45, 0);
     sheet.rotation.y = 0.05;
   }
 
-  // The readout follows the machine.
   if (time < 1.4) setStep(0);
   else if (time < 3.4) setStep(1);
   else if (time < 5.4) setStep(2);
@@ -560,8 +650,8 @@ stage.addEventListener('pointerdown', (event) => {
 });
 stage.addEventListener('pointermove', (event) => {
   if (!dragging) return;
-  dragX += (event.clientX - lastX) * 0.006;
-  dragY = Math.max(-0.5, Math.min(0.7, dragY + (event.clientY - lastY) * 0.004));
+  dragX += (event.clientX - lastX) * 0.005;
+  dragY = Math.max(-0.4, Math.min(0.6, dragY + (event.clientY - lastY) * 0.003));
   lastX = event.clientX;
   lastY = event.clientY;
 });
@@ -589,10 +679,10 @@ function frame() {
   const t = timer.getElapsed();
   update(still ? 11.4 : t);
 
-  const angle = dragX + (still ? 0 : Math.sin(t * 0.06) * 0.16);
-  const radius = 168;
-  camera.position.set(Math.sin(angle) * radius, 50 + dragY * 44, Math.cos(angle) * radius);
-  camera.lookAt(0, 7, 0);
+  const angle = dragX + (still ? 0 : Math.sin(t * 0.05) * 0.13);
+  const radius = 158;
+  camera.position.set(Math.sin(angle) * radius, 46 + dragY * 40, Math.cos(angle) * radius);
+  camera.lookAt(0, 11, 0);
 
   placeLabels();
   renderer.render(scene, camera);

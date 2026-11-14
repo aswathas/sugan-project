@@ -33,10 +33,7 @@
         <span class="plate__figure" id="stat-key">none</span>
       </span>
       <span class="session__who">Signed in as <strong id="who"></strong></span>
-      <button id="phrase-open" class="btn btn--on-ink btn--small" type="button">Recovery phrase</button>
-      <button id="totp-open" class="btn btn--on-ink btn--small" type="button">Two-factor</button>
-      <button id="logout-all" class="btn btn--on-ink btn--small" type="button">All devices</button>
-      <button id="logout" class="btn btn--on-ink" type="button">Sign out</button>
+      <button id="settings-open" class="btn btn--on-ink btn--small" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-panel">Settings</button>
     </div>
   </div>
 </header>
@@ -84,9 +81,18 @@
             <div class="field hidden" id="login-totp-field">
               <label class="route__label" for="login-totp-code">Authenticator code</label>
               <input class="input" id="login-totp-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
-              <p class="note">
+              <p class="note" id="login-totp-note">
                 This account has a second factor. Enter the six digit code from your authenticator app.
               </p>
+              <div id="login-enrol" class="hidden">
+                <p class="note">
+                  This account has never had an authenticator, so it gets one now. Scan the code with
+                  the phone camera, then enter the six digits the phone shows.
+                </p>
+                <div class="qr" id="login-qr"></div>
+                <p class="key-chip" id="login-secret"></p>
+                <pre class="code-sample__pre"><code id="login-uri"></code></pre>
+              </div>
             </div>
             <button class="btn btn--primary" type="submit">Sign in</button>
           </form>
@@ -490,19 +496,6 @@ const passwordWrappedKey = (await KeyGuard.wrapWithPassword(aes, password)).wrap
           <ul class="activity__list" id="activity"></ul>
         </div>
 
-        <div class="phrase hidden" id="phrase-panel">
-          <span class="tab">Your recovery phrase</span>
-          <p class="note">
-            Write these twelve words down and keep them somewhere safe. They are the only way to get
-            your private key back on another device, and they cannot be reset by anybody, including
-            the server.
-          </p>
-          <p class="phrase__words" id="phrase-words"></p>
-          <div class="phrase__actions">
-            <button id="phrase-copy" class="btn btn--small" type="button">Copy the phrase</button>
-            <button id="phrase-close" class="btn btn--small" type="button">Close</button>
-          </div>
-        </div>
       </div>
     </div>
   </section>
@@ -586,39 +579,88 @@ const passwordWrappedKey = (await KeyGuard.wrapWithPassword(aes, password)).wrap
   </div>
 </div>
 
-<div id="totp-panel" class="preview-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="totp-title">
+<div id="settings-panel" class="preview-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
   <div class="preview-panel">
     <div class="preview-panel__head">
       <div>
-        <span class="tab">Second factor</span>
-        <h3 id="totp-title" class="preview-panel__title">Authenticator app</h3>
+        <span class="tab">Account</span>
+        <h3 id="settings-title" class="preview-panel__title">Settings</h3>
       </div>
-      <button id="totp-close" class="btn btn--small" type="button" aria-label="Close">Close</button>
+      <button id="settings-close" class="btn btn--small" type="button" aria-label="Close">Close</button>
     </div>
     <div class="preview-panel__body">
-      <p id="totp-state" class="note"></p>
-      <div id="totp-setup" class="hidden">
+      <dl class="preview-panel__list">
+        <div class="preview-panel__row">
+          <dt>Signed in as</dt>
+          <dd id="settings-who">-</dd>
+        </div>
+        <div class="preview-panel__row">
+          <dt>Public key</dt>
+          <dd id="settings-key">-</dd>
+        </div>
+        <div class="preview-panel__row">
+          <dt>Appearance</dt>
+          <dd><button id="settings-theme" class="btn btn--small" type="button">Switch to dark theme</button></dd>
+        </div>
+      </dl>
+
+      <div class="settings__block">
+        <h4>Recovery phrase</h4>
         <p class="note">
-          Open Google Authenticator or any other authenticator app, add a new account, and enter this key:
+          Your twelve word phrase brings the private key back on another device. It never goes to the
+          server and it cannot be reset by anybody.
         </p>
-        <div class="qr" id="totp-qr"></div>
-        <p class="note">Scan that code with the phone’s camera, or enter this key by hand:</p>
-        <p class="key-chip" id="totp-secret"></p>
-        <p class="note">Or paste this address into the app:</p>
-        <pre class="code-sample__pre"><code id="totp-uri"></code></pre>
+        <div class="phrase hidden" id="phrase-panel">
+          <p class="phrase__words" id="phrase-words"></p>
+          <div class="phrase__actions">
+            <button id="phrase-copy" class="btn btn--small" type="button">Copy the phrase</button>
+            <button id="phrase-close" class="btn btn--small" type="button">Hide</button>
+          </div>
+        </div>
+        <button id="phrase-open" class="btn btn--small" type="button">Show the recovery phrase</button>
       </div>
-      <div class="field">
-        <label class="route__label" for="totp-code">Six digit code</label>
-        <input class="input" id="totp-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+
+      <div class="settings__block">
+        <h4>Second factor</h4>
+        <p id="totp-state" class="note"></p>
+        <div id="totp-setup" class="hidden">
+          <p class="note">
+            Open Google Authenticator or any other authenticator app, add a new account, and scan this
+            code with the phone camera:
+          </p>
+          <div class="qr" id="totp-qr"></div>
+          <p class="note">Or enter this key by hand:</p>
+          <p class="key-chip" id="totp-secret"></p>
+          <p class="note">Or paste this address into the app:</p>
+          <pre class="code-sample__pre"><code id="totp-uri"></code></pre>
+        </div>
+        <div class="field">
+          <label class="route__label" for="totp-code">Six digit code</label>
+          <input class="input" id="totp-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+        </div>
+        <div class="settings__actions">
+          <button id="totp-confirm" class="btn btn--primary btn--small" type="button">Turn on</button>
+          <button id="totp-disable" class="btn btn--small hidden" type="button">Turn off</button>
+        </div>
+      </div>
+
+      <div class="settings__block">
+        <h4>Sessions</h4>
+        <p class="note">
+          This account needs the authenticator code to sign out, so that a machine someone else is
+          sitting at cannot be signed out of.
+        </p>
+        <div class="settings__actions">
+          <button id="logout-all" class="btn btn--small" type="button">Sign out of every device</button>
+          <button id="logout" class="btn btn--small" type="button">Sign out</button>
+        </div>
       </div>
     </div>
     <div class="preview-panel__foot">
-      <button id="totp-confirm" class="btn btn--primary btn--small" type="button">Turn on</button>
-      <button id="totp-disable" class="btn btn--small hidden" type="button">Turn off</button>
+      <button id="settings-done" class="btn btn--primary btn--small" type="button">Done</button>
     </div>
   </div>
 </div>
-
 <div id="signout-panel" class="preview-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="signout-title">
   <div class="preview-panel preview-panel--small">
     <div class="preview-panel__head">

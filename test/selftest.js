@@ -392,33 +392,37 @@ async function verify(username, code) {
   // every other one speak it. The password alone must not open the account.
   const totp = require('../server/totp.js');
   const step = () => Math.floor(Date.now() / 1000 / 30);
-  // The sign-out-everywhere test above ended alice's session, so sign in again
-  // for a fresh one to carry the factor.
+  // The sign-out-everywhere test above ended alice's session. Every sign-in
+  // now wants the second factor, and an account that has never had one is
+  // given it at that moment.
   const aliceBack = await call('/api/login', {
     method: 'POST',
     body: { username: 'alice', password: 'correct-horse' },
   });
-  const totpCookie = aliceBack.headers.get('set-cookie').split(';')[0];
+  assert.strictEqual(aliceBack.status, 200, 'the password is right');
+  assert.strictEqual(aliceBack.body.requiresTotp, true, 'the password alone must not open the account');
+  assert.strictEqual(aliceBack.body.enrol, true, 'an account with no factor must be given one');
+  assert.ok(aliceBack.body.secret && aliceBack.body.uri, 'the setup must give a secret and an address');
+  assert.ok(aliceBack.body.uri.startsWith('otpauth://totp/'), 'the address must be one an app can read');
+  assert.ok(
+    !aliceBack.headers.get('set-cookie'),
+    'no session may be issued before the second factor'
+  );
+  const enrolSecret = aliceBack.body.secret;
+  const enrolBad = await call('/api/login/totp', {
+    method: 'POST',
+    body: { challenge: aliceBack.body.challenge, code: '111111' },
+  });
+  assert.strictEqual(enrolBad.status, 401, 'a wrong code must not open the account');
+  const enrolled = await call('/api/login/totp', {
+    method: 'POST',
+    body: { challenge: aliceBack.body.challenge, code: totp.codeAt(enrolSecret, step()) },
+  });
+  assert.strictEqual(enrolled.status, 200, 'the right code must open the account');
+  const totpCookie = enrolled.headers.get('set-cookie').split(';')[0];
+  assert.ok(totpCookie, 'the session must be issued after the code');
   const state = await call('/api/totp', { cookie: totpCookie });
-  assert.strictEqual(state.body.enabled, false, 'a new account has no second factor');
-  const enroll = await call('/api/totp/enroll', { method: 'POST', cookie: totpCookie });
-  assert.strictEqual(enroll.status, 200, 'the setup must give a secret');
-  assert.ok(enroll.body.secret && enroll.body.uri, 'the setup must give a secret and an address');
-  assert.ok(enroll.body.uri.startsWith('otpauth://totp/'), 'the address must be one an app can read');
-  const wrong = await call('/api/totp/confirm', {
-    method: 'POST',
-    cookie: totpCookie,
-    body: { code: '000000' },
-  });
-  assert.strictEqual(wrong.status, 400, 'a wrong code must not turn the factor on');
-  const confirm = await call('/api/totp/confirm', {
-    method: 'POST',
-    cookie: totpCookie,
-    body: { code: totp.codeAt(enroll.body.secret, step()) },
-  });
-  assert.strictEqual(confirm.status, 200, 'the right code must turn the factor on');
-  const on = await call('/api/totp', { cookie: totpCookie });
-  assert.strictEqual(on.body.enabled, true, 'the factor must be on after it is confirmed');
+  assert.strictEqual(state.body.enabled, true, 'the account must hold a factor after signing in');
 
   await call('/api/logout', { method: 'POST', cookie: totpCookie });
   const passwordOnly = await call('/api/login', {
@@ -439,21 +443,21 @@ async function verify(username, code) {
   assert.strictEqual(badCode.status, 401, 'a wrong code must not open the account');
   const withCode = await call('/api/login/totp', {
     method: 'POST',
-    body: { challenge: passwordOnly.body.challenge, code: totp.codeAt(enroll.body.secret, step()) },
+    body: { challenge: passwordOnly.body.challenge, code: totp.codeAt(enrolSecret, step()) },
   });
   assert.strictEqual(withCode.status, 200, 'the right code must open the account');
   assert.ok(withCode.headers.get('set-cookie'), 'the session must be issued after the code');
   const off = await call('/api/totp/disable', {
     method: 'POST',
     cookie: withCode.headers.get('set-cookie').split(';')[0],
-    body: { code: totp.codeAt(enroll.body.secret, step()) },
+    body: { code: totp.codeAt(enrolSecret, step()) },
   });
   assert.strictEqual(off.body.enabled, false, 'the factor must be able to be turned off');
   const passwordAgain = await call('/api/login', {
     method: 'POST',
     body: { username: 'alice', password: 'correct-horse' },
   });
-  assert.ok(!passwordAgain.body.requiresTotp, 'without the factor the password is enough again');
+  assert.ok(passwordAgain.body.requiresTotp, 'without the factor the account must enrol again');
 
   console.log('PASS  register + email one-time code verification');
   console.log('PASS  unverified account cannot sign in, wrong code rejected');
@@ -493,7 +497,14 @@ async function verify(username, code) {
     method: 'POST',
     body: { username: 'alice', password: 'correct-horse' },
   });
-  const aliceAgain = freshLogin.headers.get('set-cookie').split(';')[0];
+  assert.strictEqual(freshLogin.body.requiresTotp, true, 'every sign-in wants the second factor');
+  const againSecret = freshLogin.body.secret;
+  const again = await call('/api/login/totp', {
+    method: 'POST',
+    body: { challenge: freshLogin.body.challenge, code: totp.codeAt(againSecret, step()) },
+  });
+  const aliceAgain = again.headers.get('set-cookie').split(';')[0];
+  assert.ok(aliceAgain, 'the session must be issued after the code');
   const noDigest = await call('/api/shares', {
     method: 'POST',
     cookie: aliceAgain,

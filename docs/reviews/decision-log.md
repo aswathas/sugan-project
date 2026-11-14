@@ -174,3 +174,53 @@
   linked in by this change.
 - Consequence: each turn pays for 56 descriptions instead of 126, and the session is told to
   compact at a third of the window.
+
+## D15 - The scene is built from parts, not primitives
+
+- Prompts: "the 3d can we make make it more good or better ... the components looks box circles not
+  good i wan tmore better one", and the request that agy produce the plan.
+- Decision: the scene is rebuilt on a parts library, `figure/parts.js`, and no part is a bare box.
+  Every bench is a chamfered plate on four feet with a groove, corner screws, a ruler strip whose
+  ticks hang from its edge, and a label plate. The press has guide posts with collars and caps,
+  bushings, a beam, a head on two bearing arms, a die, a knurled key dial with radial ticks and a
+  pointer, and a coil spring for the return. The key boxes have a hinged lid, a brass latch and a
+  key on a ring. The hopper has a rim, a chute lip and a card slot that stands for the share
+  record. The four tones are back: the base is lo, the structure mid, the subject hi, and the die
+  is the one lit accent.
+- Alternatives considered: (a) more lights and better materials on the same boxes, which changes
+  the shading but not the shapes; (b) a different library, which costs the vendored dependency for
+  nothing; (c) a parts library, which is where the craft rules point.
+- The craft rules settled two points: hatching and dimension marks are blueprint furniture and do
+  not belong in a drawing, so the hatched strip on the floor became a low kerb; and a good figure
+  carries many small precise parts, so density comes from structure rather than from texture.
+- Evidence: the browser suite still samples the scene and requires the capsule to travel; the
+  design gate passes; the screenshot in `docs/screenshots/07-journey.png` is the new scene.
+
+## D16 - Every sign-in wants the second factor
+
+- Prompt: "add a mandatory two factor auth for login".
+- Decision: the password never opens an account on its own. An account that holds a secret is
+  asked for the code, as before. An account that has never held one is given a secret at that
+  moment and shown the code to scan, and it can only be opened once the phone has proved it holds
+  that secret.
+- Alternatives considered: (a) refuse the sign-in and tell the person to set the factor up in the
+  workspace, which is a dead end for a person who has just lost the session; (b) make the factor
+  optional, which is what it was; (c) enrol at the sign-in, so the second factor is unavoidable
+  and the phone is set up in the same place the code is asked for.
+- How: the login issues a challenge that carries the enrolment, the pending secret lives with it,
+  and the code that proves it moves the secret onto the account and records it in the trail.
+- Evidence: the server suite now signs in through the enrolment path and refuses the account
+  until the right code arrives; the browser suite plays the part of the phone and reads the
+  secret from the form.
+
+## D17 - The header carries one button
+
+- Prompt: "also the ux looks so clumsy put all those things inside a settings popup".
+- Decision: the four buttons in the header are gone. One Settings button opens a dialog that
+  holds the account, the appearance, the recovery phrase, the second factor and the sessions.
+- Alternatives considered: (a) a menu, which hides the same four items behind one click without
+  explaining them; (b) a drawer, which covers the workspace; (c) a dialog, which is the pattern
+  the app already uses for the preview and the shortcuts.
+- Evidence: the browser suite opens the settings dialog and reads the phrase and the factor
+  inside it, and the design gate passes.
+- Consequence: the header is a wordmark, a search box, two buttons and the name of the person.

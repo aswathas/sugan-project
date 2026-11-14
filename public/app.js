@@ -62,6 +62,7 @@ let sortBy = 'newest';
 let layout = readStored(LAYOUT_KEY) === 'list' ? 'list' : 'grid';
 let shares = { inbox: [], sent: [], starred: [], trashed: [] };
 let totpEnabled = false;
+let pendingEnrol = false;
 let visibleFiles = [];
 let activeCardId = null;
 let draggedShareId = null;
@@ -225,11 +226,25 @@ function showApp() {
 async function signIn(username, password) {
   const session = await api('/api/login', { method: 'POST', body: { username, password } });
   if (session.requiresTotp) {
-    // The password was right, but the account has a second factor. The
-    // session waits for the code.
+    // The password was right, but every account has a second factor. The
+    // session waits for the code. An account that has never had one is shown
+    // the code to scan, because it gets its authenticator now.
     pendingChallenge = session.challenge;
+    pendingEnrol = Boolean(session.enrol);
     $('login-totp-field').classList.remove('hidden');
     $('login-totp-code').value = '';
+    if (session.enrol) {
+      $('login-enrol').classList.remove('hidden');
+      $('login-secret').textContent = session.secret;
+      $('login-uri').textContent = session.uri;
+      $('login-qr').innerHTML = qrFor(session.uri);
+      $('login-totp-note').textContent =
+        'Scan the code with your phone, then enter the six digits it shows.';
+    } else {
+      $('login-enrol').classList.add('hidden');
+      $('login-totp-note').textContent =
+        'This account has a second factor. Enter the six digit code from your authenticator app.';
+    }
     $('login-totp-code').focus();
     return;
   }
@@ -286,7 +301,7 @@ async function restoreSession() {
 // An authenticator app: Google Authenticator or any other that speaks the
 // same scheme. The secret is shown once and kept on the phone.
 function isTotpOpen() {
-  const panel = $('totp-panel');
+  const panel = $('settings-panel');
   return Boolean(panel && !panel.classList.contains('hidden'));
 }
 
@@ -299,10 +314,18 @@ function qrFor(uri) {
   return qr.createSvgTag(4, 8, 'QR code for the authenticator app');
 }
 
-async function openTotpPanel() {
+// The settings dialog holds the account, the recovery phrase, the second
+// factor and the sessions, so the header carries one button instead of four.
+async function openSettings() {
   try {
+    $('settings-panel').classList.remove('hidden');
+    $('settings-who').textContent = me || '-';
+    $('settings-key').textContent = ($('stat-key').textContent || 'none').slice(0, 22);
+    $('settings-theme').textContent =
+      document.documentElement.getAttribute('data-theme') === 'dark'
+        ? 'Switch to paper theme'
+        : 'Switch to dark theme';
     const state = await api('/api/totp');
-    $('totp-panel').classList.remove('hidden');
     $('totp-code').value = '';
     if (state.enabled) {
       $('totp-setup').classList.add('hidden');
@@ -321,7 +344,7 @@ async function openTotpPanel() {
       $('totp-uri').textContent = setup.uri;
       $('totp-qr').innerHTML = qrFor(setup.uri);
     }
-    $('totp-close').focus();
+    $('settings-close').focus();
   } catch (err) {
     setMainStatus(err.message, 'error');
   }
@@ -329,7 +352,7 @@ async function openTotpPanel() {
 
 function closeTotpPanel() {
   if (!isTotpOpen()) return;
-  $('totp-panel').classList.add('hidden');
+  $('settings-panel').classList.add('hidden');
   $('totp-code').value = '';
 }
 
@@ -2041,7 +2064,11 @@ function bindEvents() {
       if (pendingChallenge) {
         const result = await api('/api/login/totp', {
           method: 'POST',
-          body: { challenge: pendingChallenge, code: $('login-totp-code').value.trim() },
+          body: {
+            challenge: pendingChallenge,
+            code: $('login-totp-code').value.trim(),
+            enrol: pendingEnrol,
+          },
         });
         await completeSignIn(result.username);
       } else {
@@ -2139,12 +2166,12 @@ function bindEvents() {
   });
 
   $('phrase-open').addEventListener('click', () => {
+    $('settings-panel').classList.remove('hidden');
     if (!myKeys || !myKeys.phrase) {
       setMainStatus('There is no recovery phrase on this device.', 'error');
       return;
     }
     showPhrase(myKeys.phrase);
-    $('phrase-panel').scrollIntoView({ block: 'center' });
   });
 
   $('phrase-copy').addEventListener('click', async () => {
@@ -2219,8 +2246,14 @@ function bindEvents() {
     }
   });
 
-  $('logout').addEventListener('click', () => askToSignOut(false));
-  $('logout-all').addEventListener('click', () => askToSignOut(true));
+  $('logout').addEventListener('click', () => {
+    closeTotpPanel();
+    askToSignOut(false);
+  });
+  $('logout-all').addEventListener('click', () => {
+    closeTotpPanel();
+    askToSignOut(true);
+  });
 
   for (const cell of document.querySelectorAll('[data-permission]')) {
     cell.addEventListener('click', () => {
@@ -2333,13 +2366,21 @@ function bindEvents() {
 
   $('recipient').addEventListener('change', showRecipientKey);
 
-  $('totp-open').addEventListener('click', openTotpPanel);
-  $('totp-close').addEventListener('click', closeTotpPanel);
+  $('settings-open').addEventListener('click', openSettings);
+  $('settings-close').addEventListener('click', closeTotpPanel);
+  $('settings-done').addEventListener('click', closeTotpPanel);
+  $('settings-panel').addEventListener('click', (event) => {
+    if (event.target === $('settings-panel')) closeTotpPanel();
+  });
+  $('settings-theme').addEventListener('click', () => {
+    $('theme-toggle').click();
+    $('settings-theme').textContent =
+      document.documentElement.getAttribute('data-theme') === 'dark'
+        ? 'Switch to paper theme'
+        : 'Switch to dark theme';
+  });
   $('totp-confirm').addEventListener('click', confirmTotp);
   $('totp-disable').addEventListener('click', disableTotp);
-  $('totp-panel').addEventListener('click', (event) => {
-    if (event.target === $('totp-panel')) closeTotpPanel();
-  });
 
   $('file').addEventListener('change', (event) => describeFile(event.target.files[0]));
 

@@ -328,18 +328,57 @@ async function signUp(cdp, sessionId, username) {
         return true;
       })()`
     );
+    // Every sign-in wants the second factor. This account has never had one,
+    // so the form offers the code to scan and the test plays the part of the
+    // phone: it reads the secret and computes the code.
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('login-enrol').classList.contains('hidden')",
+      'the sign in offers an authenticator'
+    );
+    const enrolSecret = await evaluate(
+      alice,
+      alicePage,
+      "document.getElementById('login-secret').textContent.trim()"
+    );
+    const totp = require('../server/totp.js');
+    const enrolCode = totp.codeAt(enrolSecret, Math.floor(Date.now() / 1000 / 30));
+    await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        document.getElementById('login-totp-code').value = ${JSON.stringify(enrolCode)};
+        document.getElementById('login-form').requestSubmit();
+        return true;
+      })()`
+    );
     await waitFor(
       alice,
       alicePage,
       "!document.getElementById('app').classList.contains('hidden')",
       'alice signed in again'
     );
+    const factorNow = await evaluate(
+      alice,
+      alicePage,
+      "(async () => (await (await fetch('/api/totp')).json()).enabled)()"
+    );
+    assert.strictEqual(factorNow, true, 'every account must hold a second factor after signing in');
+    console.log('PASS  every sign-in asks for the second factor, and a new account is given one');
     const phraseHidden = await evaluate(
       alice,
       alicePage,
       "document.getElementById('phrase-panel').classList.contains('hidden')"
     );
     assert.ok(phraseHidden, 'the recovery phrase panel must not open on every sign in');
+    await evaluate(alice, alicePage, "document.getElementById('settings-open').click()");
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('settings-panel').classList.contains('hidden')",
+      'the settings dialog opens'
+    );
     await evaluate(alice, alicePage, "document.getElementById('phrase-open').click()");
     await waitFor(
       alice,
@@ -348,6 +387,7 @@ async function signUp(cdp, sessionId, username) {
       'the phrase opens when it is asked for'
     );
     await evaluate(alice, alicePage, "document.getElementById('phrase-close').click()");
+    await evaluate(alice, alicePage, "document.getElementById('settings-close').click()");
     console.log('PASS  the recovery phrase opens when asked for, not on every sign in');
 
     // The Google button appears because the server publishes the client id.
@@ -359,9 +399,13 @@ async function signUp(cdp, sessionId, username) {
         script: !!document.querySelector('script[src*="accounts.google.com/gsi/client"]'),
         accessCode: !document.getElementById('register-access').classList.contains('hidden'),
         origins: null,
+        note: document.getElementById('google-note').textContent,
+        origin: window.location.origin,
+        config: null,
       }))()`
     );
-    assert.ok(google.shown, 'the Google sign-in block must be shown when a client id is configured');
+    google.config = await evaluate(alice, alicePage, "fetch('/api/config').then((r) => r.text())");
+    assert.ok(google.shown, 'the Google sign-in block must be shown when a client id is configured: ' + JSON.stringify(google));
     assert.ok(google.script, 'the Google Identity script must be loaded');
     const config = await evaluate(
       alice,
@@ -893,10 +937,43 @@ async function signUp(cdp, sessionId, username) {
     );
     console.log('PASS  a file that arrives is announced');
 
-    // The second factor must be usable from the page, not only from the API:
-    // open the panel, take the secret the app shows, give it the code it
-    // expects, and the account is protected from then on.
-    await evaluate(alice, alicePage, "document.getElementById('totp-open').click()");
+    // The second factor is on, because every sign-in demands one. It can be
+    // turned off and set up again from the settings dialog, and the code the
+    // phone reads is drawn there.
+    await evaluate(alice, alicePage, "document.getElementById('settings-open').click()");
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('settings-panel').classList.contains('hidden')",
+      'the settings dialog opens'
+    );
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('totp-disable').classList.contains('hidden')",
+      'the factor is on'
+    );
+
+    // off, with the code the phone would show
+    const offCode = totp.codeAt(enrolSecret, Math.floor(Date.now() / 1000 / 30));
+    await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        document.getElementById('totp-code').value = ${JSON.stringify(offCode)};
+        document.getElementById('totp-disable').click();
+        return true;
+      })()`
+    );
+    await waitFor(
+      alice,
+      alicePage,
+      "[...document.querySelectorAll('#toasts .toast')].some((t) => t.textContent.includes('second factor'))",
+      'the factor turns off'
+    );
+
+    // and on again, from the same dialog
+    await evaluate(alice, alicePage, "document.getElementById('settings-open').click()");
     await waitFor(
       alice,
       alicePage,
@@ -908,7 +985,6 @@ async function signUp(cdp, sessionId, username) {
       alicePage,
       "document.getElementById('totp-secret').textContent.trim()"
     );
-    const totp = require('../server/totp.js');
     const code = totp.codeAt(secret, Math.floor(Date.now() / 1000 / 30));
     await evaluate(
       alice,
@@ -931,7 +1007,7 @@ async function signUp(cdp, sessionId, username) {
       "(async () => (await (await fetch('/api/totp')).json()).enabled)()"
     );
     assert.strictEqual(factorOn, true, 'the account must ask for a code after this');
-    console.log('PASS  the authenticator app turns on the second factor from the page');
+    console.log('PASS  the second factor is turned off and on again from the settings dialog');
 
     // The setup shows a code the phone's camera can read.
     const qr = await evaluate(

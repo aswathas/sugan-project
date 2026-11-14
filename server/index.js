@@ -369,15 +369,30 @@ async function handleApi(req, res, url) {
     }
     delete attempts[username];
     db.loginAttempts = attempts;
-    // A second factor, when the account has one, holds the session back. The
-    // password has been checked; the session waits for the code.
-    if (user.totpSecret) {
-      const challenge = newToken();
-      db.pendingLogins = db.pendingLogins || {};
-      db.pendingLogins[challenge] = { username, expires: Date.now() + 5 * 60 * 1000, tries: 0 };
-      save(db);
-      return json(res, 200, { requiresTotp: true, challenge });
+    // Every account needs a second factor. The password has been checked; the
+    // session waits for the code. An account that has never set one up is given
+    // one now: the secret is shown once, and the account can only be opened
+    // once the phone has proved it holds that secret.
+    const enrol = !user.totpSecret;
+    const secret = enrol ? totp.generateSecret() : null;
+    if (enrol) {
+      db.pendingTotp = db.pendingTotp || {};
+      db.pendingTotp[username] = { secret, expires: Date.now() + 10 * 60 * 1000 };
     }
+    const challenge = newToken();
+    db.pendingLogins = db.pendingLogins || {};
+    db.pendingLogins[challenge] = { username, expires: Date.now() + 5 * 60 * 1000, tries: 0, enrol };
+    save(db);
+    if (enrol) {
+      return json(res, 200, {
+        requiresTotp: true,
+        enrol: true,
+        challenge,
+        secret: totp.group(secret),
+        uri: totp.uri(secret, username),
+      });
+    }
+    return json(res, 200, { requiresTotp: true, challenge });
     const token = newToken();
     db.sessions[token] = { username, expires: Date.now() + SESSION_TTL_MS };
     save(db);
@@ -396,7 +411,24 @@ async function handleApi(req, res, url) {
       return json(res, 401, { error: 'that sign-in attempt has expired, start again' });
     }
     const user = db.users[entry.username];
-    if (!user || !user.totpSecret || !totp.verify(user.totpSecret, body.code)) {
+    // An account that is enrolling proves it with the secret it was just
+    // given; an account that has one already proves it with the stored secret.
+    const pendingSecret = (db.pendingTotp || {})[entry.username];
+    let accepted = false;
+    if (entry.enrol) {
+      accepted = Boolean(
+        user && pendingSecret && pendingSecret.expires > Date.now() &&
+        totp.verify(pendingSecret.secret, body.code)
+      );
+      if (accepted) {
+        user.totpSecret = pendingSecret.secret;
+        delete (db.pendingTotp || {})[entry.username];
+        logEvent('totp_enabled', entry.username, null, null);
+      }
+    } else {
+      accepted = Boolean(user && user.totpSecret && totp.verify(user.totpSecret, body.code));
+    }
+    if (!accepted) {
       entry.tries += 1;
       if (entry.tries >= MAX_LOGIN_ATTEMPTS) {
         delete pending[body.challenge];
