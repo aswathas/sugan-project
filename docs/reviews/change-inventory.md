@@ -148,3 +148,15 @@
 | `tools/build-deck.js` | The check counts corrected | The deck said 18 and 9 checks | The deck file validates |
 | `figure/sealing-press.html` | Rebuilt | The builder changed | The browser suite reads the figure |
 | `docs/report-draft/*.md`, `report/*` | Counts, the new test cases and the cipher field section changed; the report and the deck rebuilt | The report has to match the code | The contents page is right; the report still describes the removed panel and is on hold until the user lifts it |
+
+|---|---|---|---|
+| `figure/journey.html` | New. The page of the 3D scene: the paper palette, the labels layer, the readout and the step marks | The showcase needs its own page, so it can be seen full size and screenshotted | Opened by the browser suite |
+| `figure/journey.js` | New. The scene: two browsers, a server with a hopper, the boundary as a fence and a hatched strip, the sheet, the capsule, the press, the key boxes, the labels and the six steps of the story | The whole system has to be visible in one picture | The browser suite samples it and requires the capsule to travel |
+| `public/vendor/three.module.min.js` | New. three.js r186, MIT, served from our own origin | A 3D scene without a third party in the page and without a build step | The scene loads and draws |
+| `public/vendor/three.core.js` | New. The core module the r186 build imports | The build is split in two files and the import is a relative path | The scene loads and draws |
+| `public/index.html` | The link to the scene, under the press | The scene has to be reachable from the sign-in page | The design gate passes |
+| `test/browsertest.js` | A check that the scene draws, labels the parts and moves the file across the boundary | New behaviour needs a check | 31 checks pass |
+| `docs/screenshots/07-journey.png` | The scene, captured from the running page | The report and the deck will need a picture of it | Captured by the check script |
+| `~/.agents/skills-active/` | 71 junctions removed, `p5js` linked in, 56 left | The user asked for the unused skills to be unloaded; every turn pays for the injected descriptions | `skillhub status` before and after |
+| `~/.agents/skills/threejs-skills/` | The CloudAI-X threejs skill set, MIT, cloned into the store with its own `.git` removed | The API used must be the API of the release that is installed | `SKILL.md` files read from the store |
+| `~/.claude/settings.json` | The context hook wired into `UserPromptSubmit` | A script that is never called is not a guard | The hook runs and stays silent below the threshold |

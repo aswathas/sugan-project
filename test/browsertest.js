@@ -979,6 +979,26 @@ async function signUp(cdp, sessionId, username) {
     assert.ok(stillMe.length > 0, 'the workspace shows who is signed in after a reload');
     console.log('PASS  a reload keeps the session, so there is no second sign-in');
 
+    // The 3D scene: the whole trip of one file. It must draw and it must move.
+    await alice.send('Page.navigate', { url: SITE + '/figure/journey.html' }, alicePage);
+    await waitFor(alice, alicePage, '!!window.__journey', 'the scene loads');
+    const scene = await evaluate(
+      alice,
+      alicePage,
+      `(async () => {
+        const seen = new Set();
+        for (let i = 0; i < 16; i++) {
+          seen.add(window.__journey.step() + ':' + Math.round(window.__journey.capsuleX()));
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        return JSON.stringify({ states: seen.size, labels: window.__journey.labels() });
+      })()`
+    );
+    const read = JSON.parse(scene);
+    assert.ok(read.states >= 2, 'the capsule must travel across the bench');
+    assert.ok(read.labels >= 8, 'the scene must label the parts');
+    console.log('PASS  the 3D scene draws, labels the parts and moves the file across the boundary');
+
     console.log('\nALL BROWSER CHECKS PASSED');
   } finally {
     alice.close();

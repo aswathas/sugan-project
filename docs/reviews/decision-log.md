@@ -131,3 +131,46 @@
 - Decision: the three must-fix findings from the audit were fixed: the audit trail keeps an anchor when the log is trimmed, a share without a fingerprint is refused, and the database write is atomic. The figure measures its own rectangle instead of trusting an observer, because an observer inside a lazily loaded frame reported it as out of view and the press stood still.
 - Evidence: the server suite gained the trail and fingerprint checks; the browser suite watches the head of the press and the readout across a whole cycle and requires at least two states.
 - Consequence: the chain survives the cut, the store refuses an unsigned share, and the machine on the sign-in page works.
+
+## D13 - The whole trip of one file, in three dimensions
+
+- Prompt: "i like the 3d approach but what skill we gonna use check internet find skill and tell me",
+  then "continue building".
+- Decision: the showcase is its own page, `figure/journey.html`, built with three.js r186 and the
+  `threejs-skills` set from CloudAI-X. The scene shows two browsers and one server with a hard
+  boundary between each browser and the server: a readable sheet on the sender's side is sealed
+  into a capsule there, the capsule crosses the boundary as ciphertext, lands in the server's
+  hopper, and comes back out as a readable sheet at the recipient's.
+- Alternatives considered: (a) a 2D flow diagram, which reads well but says less in a demo; (b)
+  p5.js in WEBGL mode, already installed, but 1 MB against three.js's 384 KB and weaker for lit
+  solids and shadows; (c) React Three Fiber, which would need React and a bundler the project
+  deliberately does not have.
+- How: three.js is vendored under `public/vendor/` and served from our own origin, so the content
+  policy needs no change and no third party is contacted. The scene is a module script in its own
+  file, for the same reason the press figure uses one. The threejs skill set was cloned into the
+  store so the API used is the API of the release that is installed, and the two library files it
+  needs, `three.module.min.js` and `three.core.js`, are vendored beside each other.
+- Evidence: the browser suite opens the page, waits for the scene, samples it and requires at
+  least two different states, so the capsule has to travel; the design gate passes; a screenshot
+  of the scene is in `docs/screenshots/07-journey.png`.
+- Consequence: the project can show the whole system in one picture, and the picture is the code
+  talking, not a picture of the code.
+
+## D14 - The skills catalogue is curated, not complete
+
+- Prompt: "i dont want you waste tokens use all the token saving skills we have unload unwatned
+  shkills also compact every 32k tokens".
+- Decision: the harness is given 56 skills instead of 126, and a hook asks for a compaction once
+  the context passes 32,000 tokens.
+- Alternatives considered: (a) promise to be careful, which saves nothing because the injected
+  descriptions are paid for on every turn; (b) point the harness at the whole store, which is what
+  a repair does and which would raise the count from 126 to 339; (c) curate, and write the keep
+  list down so the next repair knows.
+- How: the junctions in `~/.agents/skills-active` are the curated set; the 71 outside the keep
+  list were unlinked, and the list itself is in `skills-active.list.json`. The new hook reads the
+  last usage record from the session transcript and, past the threshold, says so once and then
+  only after another 16,000 of growth.
+- Evidence: the injected skill list on the next turn held 56 entries and named `p5js`, which was
+  linked in by this change.
+- Consequence: each turn pays for 56 descriptions instead of 126, and the session is told to
+  compact at a third of the window.
