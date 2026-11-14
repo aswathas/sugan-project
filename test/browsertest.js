@@ -481,6 +481,12 @@ async function signUp(cdp, sessionId, username) {
     await shoot(alice, alicePage, '03-sent.png');
 
     // The dashboard counts what was sent.
+    await waitFor(
+      alice,
+      alicePage,
+      "document.getElementById('count-sent').textContent === '1'",
+      'the dashboard counts the share'
+    );
     const counts = await evaluate(
       alice,
       alicePage,
@@ -776,6 +782,12 @@ async function signUp(cdp, sessionId, username) {
 
 
 
+    await waitFor(
+      bob,
+      bobPage,
+      "[...document.querySelectorAll('#cards .card-file')].some((c) => c.textContent.includes('syllabus.pdf'))",
+      'the card is on screen'
+    );
     const chip = await evaluate(
       bob,
       bobPage,
@@ -788,6 +800,12 @@ async function signUp(cdp, sessionId, username) {
     assert.strictEqual(chip, 'PDF', 'the card must carry a file type chip');
     console.log('PASS  the card carries a file type chip');
 
+    await waitFor(
+      bob,
+      bobPage,
+      "!![...document.querySelectorAll('#cards .card-file')].find((c) => c.textContent.includes('syllabus.pdf'))",
+      'the card is on screen'
+    );
     await evaluate(
       bob,
       bobPage,

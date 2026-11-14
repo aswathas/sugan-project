@@ -848,11 +848,22 @@ select.input {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-md);
+  gap: var(--space-sm);
   padding: var(--space-xl) 0;
   border-bottom: var(--rule-hair) solid var(--color-rule);
   color: var(--color-muted);
   font-size: var(--text-sm);
+}
+
+/* What belongs in the view, and why it is worth anything. */
+.cards__empty-title {
+  color: var(--color-ink);
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.cards__empty-why {
+  max-width: 56ch;
 }
 
 .card-skeleton {

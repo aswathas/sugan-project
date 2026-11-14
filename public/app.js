@@ -175,11 +175,16 @@ async function fingerprint(publicKeyB64) {
 /* ---------------- api ---------------- */
 
 async function api(path, options = {}) {
-  const res = await fetch(path, {
-    method: options.method || 'GET',
-    headers: options.body ? { 'Content-Type': 'application/json' } : {},
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(path, {
+      method: options.method || 'GET',
+      headers: options.body ? { 'Content-Type': 'application/json' } : {},
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+  } catch {
+    throw new Error('The server could not be reached. Check the connection and try again.');
+  }
   const text = await res.text();
   const data = text ? JSON.parse(text) : {};
   if (!res.ok) throw new Error(data.error || res.statusText);
@@ -272,6 +277,7 @@ async function completeSignIn(username) {
   showApp();
   await refresh();
   await uploadBackup();
+  await maybeRevealPhrase();
 }
 
 // The sign in page, with the box for the twelve words open and waiting.
@@ -359,6 +365,9 @@ function closeTotpPanel() {
   if (!isTotpOpen()) return;
   $('settings-panel').classList.add('hidden');
   $('totp-code').value = '';
+  // The phrase is not left lying open in the dialog: it is shown when it is
+  // made or when it is asked for, and it is put away when the dialog closes.
+  hidePhrase();
 }
 
 async function confirmTotp() {
@@ -381,7 +390,7 @@ async function recoverKeyIfAsked(username) {
     const blob = await api('/api/keys/recover', { method: 'POST', body: { username } });
     const privateKey = await KeyGuard.unwrapPrivateKey(blob, phrase);
     const existing = (await idbGet(username)) || {};
-    await idbPut(username, { ...existing, privateKey, phrase });
+    await idbPut(username, { ...existing, privateKey, phrase, phraseShown: true });
     myKeys = await idbGet(username);
     $('auth-error').textContent = '';
     setMainStatus('The recovery phrase worked. Your private key is back on this device.', 'ok');
@@ -402,7 +411,7 @@ async function uploadBackup() {
   try {
     await api('/api/keys/backup', { method: 'POST', body: myKeys.backup });
   } catch (err) {
-    showPhrase(myKeys.phrase);
+    revealPhrase(myKeys.phrase);
     setMainStatus(
       `Your recovery key could not be saved on the server: ${err.message}. Keep the phrase below somewhere safe; without it a new device cannot open your files.`,
       'error'
@@ -410,13 +419,35 @@ async function uploadBackup() {
   }
 }
 
-function showPhrase(phrase) {
+// The phrase is shown in the open dialog. A phrase revealed inside a closed
+// dialog is a phrase nobody ever writes down.
+function revealPhrase(phrase) {
   if (!phrase) return;
+  $('settings-panel').classList.remove('hidden');
   $('phrase-panel').classList.remove('hidden');
   // The copy action lives in the dialog's foot, so it stays reachable however
   // far the phrase is scrolled.
   $('phrase-actions').classList.remove('hidden');
+  // The button to show it again has nothing left to do.
+  $('phrase-open').classList.add('hidden');
   $('phrase-words').textContent = phrase;
+  $('phrase-panel').scrollIntoView({ block: 'center' });
+}
+
+function hidePhrase() {
+  $('phrase-panel').classList.add('hidden');
+  $('phrase-actions').classList.add('hidden');
+  $('phrase-open').classList.remove('hidden');
+}
+
+// The phrase is shown once, when it is first made on this device, and the
+// fact that it has been shown is kept beside the key.
+async function maybeRevealPhrase() {
+  if (!myKeys || !myKeys.phrase || myKeys.phraseShown) return;
+  const existing = (await idbGet(me)) || {};
+  await idbPut(me, { ...existing, phraseShown: true });
+  myKeys = { ...myKeys, phraseShown: true };
+  revealPhrase(myKeys.phrase);
 }
 
 function setTab(which) {
@@ -520,6 +551,7 @@ async function onGoogleCredential(response) {
       );
     } else {
       await uploadBackup();
+      await maybeRevealPhrase();
     }
   } catch (err) {
     $('auth-error').textContent = err.message;
@@ -547,6 +579,18 @@ const VIEWS = {
     direction: (file) => (file.from === me ? 'to' : 'from'),
   },
 };
+
+// The view is one piece of state, and everything that changes it goes
+// through here: the rail, the new share button, and the toast that opens a
+// file that has just arrived.
+function setView(next) {
+  view = next;
+  setFilter('all');
+  closeCardMenu();
+  selectedIds.clear();
+  activeCardId = null;
+  render();
+}
 
 function setMainStatus(message, kind) {
   const status = $('main-status');
@@ -898,11 +942,24 @@ async function refresh() {
   const select = $('recipient');
   const previousRecipient = select.value;
   select.innerHTML = '';
+  let others = 0;
   for (const user of users) {
     if (user.username === me) continue;
+    others += 1;
     const option = document.createElement('option');
     option.value = user.username;
     option.textContent = user.username;
+    select.appendChild(option);
+  }
+  syncShareButton();
+  if (!others) {
+    // The list is not empty by accident: it says that there is nobody to
+    // send to, so the panel below can say what to do about it.
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Nobody else is registered yet';
+    option.disabled = true;
+    option.selected = true;
     select.appendChild(option);
   }
   if (previousRecipient && users.some((u) => u.username === previousRecipient && u.username !== me)) {
@@ -1160,13 +1217,44 @@ async function watch() {
 // who wants to see the arrival check without waiting for the timer.
 window.__watch = watch;
 
-function emptyMessageFor(currentView) {
-  if (query || filterBy !== 'all') return 'No file matches that search';
-  if (currentView === 'sent') return 'You have not sent anything yet.';
-  if (currentView === 'starred') return 'No starred files yet.';
-  if (currentView === 'trashed') return 'Nothing to restore';
-  if (currentView === 'recent') return 'No recent files yet.';
-  return 'Nothing has been shared with you yet.';
+// An empty view says what belongs in it, why it matters, and what to do next.
+// The button is the one action that can actually fill that view.
+const EMPTY_STATES = {
+  inbox: {
+    title: 'Nobody has sent you a file yet.',
+    why: 'When somebody sends you one it opens here, decrypted in this browser and nowhere else.',
+    action: 'copy',
+  },
+  sent: {
+    title: 'You have not sent anything yet.',
+    why: 'Every file you encrypt and send is listed here, with the state the server holds for it.',
+    action: 'share',
+  },
+  starred: {
+    title: 'No starred files yet.',
+    why: 'Star a file you want to find again in a hurry, and it waits for you here.',
+    action: null,
+  },
+  recent: {
+    title: 'No recent files yet.',
+    why: 'Everything you send or receive turns up here, newest first.',
+    action: 'share',
+  },
+  trashed: {
+    title: 'Nothing to restore.',
+    why: 'Files you delete are kept here until you restore them or purge them for good.',
+    action: null,
+  },
+};
+
+function emptyStateFor(currentView) {
+  if (query) {
+    return { title: 'No file matches that search.', why: 'A shorter word, or a different one, may find it.', action: 'search' };
+  }
+  if (filterBy !== 'all') {
+    return { title: 'No file matches that filter.', why: 'The chips above narrow this list. "All" brings everything back.', action: 'filter' };
+  }
+  return EMPTY_STATES[currentView] || EMPTY_STATES.inbox;
 }
 
 function createStarIcon() {
@@ -1188,11 +1276,20 @@ function renderCards(files, direction) {
     const empty = document.createElement('div');
     empty.className = 'cards__empty';
 
+    const state = emptyStateFor(view);
     const message = document.createElement('p');
-    message.textContent = emptyMessageFor(view);
+    message.className = 'cards__empty-title';
+    message.textContent = state.title;
     empty.appendChild(message);
 
-    if (query || filterBy !== 'all') {
+    if (state.why) {
+      const why = document.createElement('p');
+      why.className = 'cards__empty-why';
+      why.textContent = state.why;
+      empty.appendChild(why);
+    }
+
+    if (state.action === 'search') {
       const clearBtn = document.createElement('button');
       clearBtn.type = 'button';
       clearBtn.className = 'btn btn--small';
@@ -1204,7 +1301,17 @@ function renderCards(files, direction) {
         render();
       });
       empty.appendChild(clearBtn);
-    } else if (view !== 'trashed') {
+    } else if (state.action === 'filter') {
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'btn btn--small';
+      clearBtn.textContent = 'Clear the filter';
+      clearBtn.addEventListener('click', () => {
+        setFilter('all');
+        render();
+      });
+      empty.appendChild(clearBtn);
+    } else if (state.action === 'share') {
       const shareBtn = document.createElement('button');
       shareBtn.type = 'button';
       // The rail's New button is the one primary action. Two saturated
@@ -1213,6 +1320,23 @@ function renderCards(files, direction) {
       shareBtn.textContent = 'Share a file';
       shareBtn.addEventListener('click', () => openNewShareFor(null));
       empty.appendChild(shareBtn);
+    } else if (state.action === 'copy') {
+      // The inbox cannot be filled by sending: it fills when somebody else
+      // sends. The one thing a person can do is hand over their address.
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'btn btn--small';
+      copyBtn.textContent = 'Copy my address';
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(await myAddress());
+          setMainStatus('Your address is copied. Send it to the person you want to share with.', 'ok');
+          toast('Address copied.');
+        } catch {
+          setMainStatus(`Your address: ${await myAddress()}`, 'ok');
+        }
+      });
+      empty.appendChild(copyBtn);
     }
 
     container.appendChild(empty);
@@ -1819,12 +1943,47 @@ function moveActiveCard(delta) {
 
 /* ---------------- recipient key ---------------- */
 
+// The address of this account: where the site is, who it is, and the
+// fingerprint of the key it publishes. A first user has nobody to send to,
+// so the address is the one thing they can hand over.
+async function myAddress() {
+  const print = myKeys && myKeys.publicKeyB64 ? await fingerprint(myKeys.publicKeyB64) : 'none';
+  return `${location.origin} - ${me} - key ${print}`;
+}
+
 async function showRecipientKey() {
   const user = users.find((u) => u.username === $('recipient').value);
   const note = $('recipient-key');
   note.innerHTML = '';
   if (!user) {
-    note.textContent = 'No other users registered yet. Share the address so someone can register.';
+    // Nobody else is registered yet. Say so, and give the address to hand
+    // over, because that is the only way out.
+    const line = document.createElement('p');
+    line.className = 'note';
+    line.textContent =
+      'Nobody else is registered yet. Send your address to whoever you want to share with, and they can register and send back.';
+    const plate = document.createElement('span');
+    plate.className = 'plate';
+    const caption = document.createElement('span');
+    caption.textContent = 'your address';
+    const figure = document.createElement('span');
+    figure.className = 'plate__figure';
+    figure.textContent = `${me} - ${location.origin}`;
+    plate.append(caption, figure);
+    const copy = document.createElement('button');
+    copy.className = 'btn btn--small';
+    copy.type = 'button';
+    copy.textContent = 'Copy my address';
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(await myAddress());
+        setMainStatus('Your address is copied. Send it to the person you want to share with.', 'ok');
+        toast('Address copied.');
+      } catch {
+        setMainStatus(`Your address: ${await myAddress()}`, 'ok');
+      }
+    });
+    note.append(line, plate, copy);
     return;
   }
   const print = await fingerprint(user.publicKey);
@@ -1840,6 +1999,16 @@ async function showRecipientKey() {
 }
 
 /* ---------------- the file picker ---------------- */
+
+// The send button is live only when it can do its job: a file chosen and a
+// person to send it to. A button that is on and cannot work is a small lie.
+function syncShareButton() {
+  const button = $('share');
+  if (!button) return;
+  const hasFile = Boolean($('file') && $('file').files && $('file').files.length);
+  const hasRecipient = Boolean($('recipient') && $('recipient').value);
+  button.disabled = !(hasFile && hasRecipient);
+}
 
 function describeFile(file) {
   if (!file) {
@@ -2174,7 +2343,7 @@ function bindEvents() {
       await refresh();
       await uploadBackup();
       // The phrase is shown once, here, when it is first made.
-      showPhrase(myKeys && myKeys.phrase);
+      await maybeRevealPhrase();
     } catch (err) {
       $('auth-error').textContent = err.message;
     }
@@ -2186,8 +2355,7 @@ function bindEvents() {
   });
 
   $('phrase-close').addEventListener('click', () => {
-    $('phrase-panel').classList.add('hidden');
-    $('phrase-actions').classList.add('hidden');
+    hidePhrase();
   });
 
   $('phrase-open').addEventListener('click', () => {
@@ -2196,7 +2364,7 @@ function bindEvents() {
       setMainStatus('There is no recovery phrase on this device.', 'error');
       return;
     }
-    showPhrase(myKeys.phrase);
+    revealPhrase(myKeys.phrase);
   });
 
   $('phrase-copy').addEventListener('click', async () => {
@@ -2295,12 +2463,7 @@ function bindEvents() {
 
   for (const item of document.querySelectorAll('.rail__item')) {
     item.addEventListener('click', () => {
-      view = item.dataset.view;
-      setFilter('all');
-      closeCardMenu();
-      selectedIds.clear();
-      activeCardId = null;
-      render();
+      setView(item.dataset.view);
     });
   }
 
@@ -2367,7 +2530,10 @@ function bindEvents() {
     if (file) copyReceipt(file);
   });
 
-  $('recipient').addEventListener('change', showRecipientKey);
+  $('recipient').addEventListener('change', () => {
+    showRecipientKey();
+    syncShareButton();
+  });
 
   $('settings-open').addEventListener('click', openSettings);
   $('settings-close').addEventListener('click', closeTotpPanel);
@@ -2384,7 +2550,10 @@ function bindEvents() {
   });
   $('totp-confirm').addEventListener('click', confirmTotp);
 
-  $('file').addEventListener('change', (event) => describeFile(event.target.files[0]));
+  $('file').addEventListener('change', (event) => {
+    describeFile(event.target.files[0]);
+    syncShareButton();
+  });
 
   $('drop').addEventListener('dragover', (event) => {
     event.preventDefault();
@@ -2419,7 +2588,9 @@ function bindEvents() {
       return;
     }
     if (!recipient) {
-      status.textContent = 'Pick a recipient first.';
+      status.textContent = $('recipient').value
+        ? 'Pick a recipient first.'
+        : 'Nobody else is registered yet. Copy your address and send it to someone, then they can share back.';
       return;
     }
     const target = users.find((u) => u.username === recipient);
@@ -2517,6 +2688,12 @@ function bindEvents() {
       $('file').value = '';
       describeFile(null);
       toast('Encrypted and sent.');
+      // The panel closes for the next view, so the sentence that proves the
+      // promise is left where it can still be read.
+      setMainStatus(
+        `${status.textContent} The server holds only ciphertext.`,
+        'ok'
+      );
       await refresh();
       setFilter('all');
       view = 'sent';
@@ -2580,6 +2757,7 @@ function bindEvents() {
     // The recovery phrase panel sits over the workspace, so Escape closes it
     // before anything else happens.
     if ($('phrase-panel') && !$('phrase-panel').classList.contains('hidden')) {
+      hidePhrase();
       if (event.key === 'Escape') {
         event.preventDefault();
         $('phrase-panel').classList.add('hidden');

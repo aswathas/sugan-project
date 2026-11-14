@@ -359,3 +359,36 @@
   rows and sentences are there; the deck passes the office validator; the report and the deck are
   the versions that were sent.
 - Consequence: what Sugan reads describes the build that is live.
+
+## D23 - The first run, judged on what a person meets
+
+- Prompt: "/impeccable onboard".
+- Decision: the first-run journey was walked in a browser as a brand new account, and what a person
+  meets was fixed from what that walk showed. Five things were wrong. The recovery phrase was
+  written into a dialog that was closed, so the twelve words nobody ever saw were the only copy the
+  person had; the phrase is now shown once, when it is made, in the open dialog, with the fact
+  that it has been shown kept beside the key, and it is put away when the dialog closes. The first
+  account on a fresh deployment could not do anything: the recipient list was empty, the sentence
+  said that nobody else had registered and told the person to share an address it never showed,
+  and the only key on the page was a number in a span. The panel now says who it is and where the
+  site is, and gives a button that copies it. The toast that announces a file that has arrived had
+  a button that called a function that did not exist, so the recipient's first click did nothing
+  but throw; there is now one function that changes the view and everything uses it. The sentence
+  that proved the promise after a first send was written inside the panel that was about to close,
+  so it survived as a toast for four seconds; it is now left in the status line, which outlives the
+  panel. And the five empty views each carried one sentence and one button, three of which offered
+  an action that could not fill the view; they now say what belongs in the view, why it is worth
+  anything, and the one action that can actually put something there. The send button is off
+  until there is a file and a person, and a network failure says so in words instead of "Failed to
+  fetch".
+- Alternatives considered: (a) a tour of the interface, which teaches the product at the cost of
+  putting it between the person and the work; (b) the incumbent copy, which is short and says
+  nothing; (c) the empty states as they were, one sentence and the same button in three of them.
+- Evidence: the first-run journey was captured again with a fresh account: every empty view now
+  carries what, why and one action, the console is clean, and the settings dialog opens with the
+  twelve words in it. The server suite, the browser suite, the live checks, the design gate and
+  the detector all pass. Two browser checks that read the card list while it was reloading were
+  made to wait, because they were racing the reload rather than testing the build.
+- Consequence: a new account sees its recovery phrase, a first account can hand over its address
+  and get a file back, the arrival toast works, the first send says what happened where it can
+  still be read, and an empty view says what belongs in it.
