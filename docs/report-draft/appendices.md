@@ -9,22 +9,22 @@ Table A1.1 Programs that make up the prototype
 | File | Lines | What it is |
 |---|---|---|
 | `package.json` | 17 | Declares the project, the Node.js engine requirement and the scripts `start`, `test`, `test:browser`, `test:live`, `test:all` and `show:ciphertext`. It deliberately declares no dependencies. |
-| `server/index.js` | 721 | The HTTP server: static files, registration, verification, sign-in and sign-out, sessions, the share lifecycle (create, list, metadata, blob, star, delete, restore, purge, revoke, opened), the activity trail, the key backup and recovery endpoints, and the security headers on every response. |
+| `server/index.js` | 745 | The HTTP server: static files, registration, verification, sign-in and sign-out, sessions, the share lifecycle (create, list, metadata, blob, star, delete, restore, purge, revoke, opened), the activity trail, the key backup and recovery endpoints, and the security headers on every response. |
 | `server/store.js` | 53 | The persistence layer: loads and saves the JSON store, reads and writes the ciphertext blobs. The data directory can be overridden, so a test run never touches demonstration data. |
 | `server/crypto.js` | 20 | Password hashing with scrypt and a per-user salt, constant-time verification, and opaque session tokens. |
 | `server/mailer.js` | 38 | Delivers the six-digit one-time code. The default console mode prints it in the server terminal, so the demo needs no external service. The optional Resend mode sends it by email. |
 | `server/google.js` | 70 | Verifies a Google identity token against Google's published keys with `node:crypto`: RS256, the issuer, the audience, the expiry and the signature are all checked, and the keys are cached for an hour. No client secret is used anywhere. |
 | `server/trail.js` | 50 | The audit trail. Each event carries the SHA-256 of the event before it, so the log is a chain that can be walked and proved. |
-| `public/index.html` | 459 | The interface markup: the sign-in page, the file-drive workspace (the rail with its counts, the search band, the grid or list of file cards with type chips and permission badges, the send panel, the activity panel) and the three overlays. |
-| `public/app.js` | 2184 | The client logic: the key pair in the browser, the non-extractable private key in IndexedDB, the encryption, the key wrapping, the signature, the upload, the download, the decryption, the dashboard rendering, the filters, the bulk actions and the audit trail view. |
-| `public/keyguard.js` | 194 | The three extra keys: the ECDSA signing key, the AES-KW password wrap, and the twelve-word recovery phrase that unlocks the private key on a new device. |
-| `public/style.css` | 1617 | The appearance of the application: the Wayfind theme, the workspace layout, the cards, the overlays and the dark theme. It imports `public/tokens.css` (the tokens) and `public/base.css` (the reset). |
+| `public/index.html` | 613 | The interface markup: the sign-in page (the hero and the action, the workspace as a captured screen, three named moments from send to receipt with their real screens, a sample of the real encryption code, the questions a visitor asks and the action again at the close), the file-drive workspace (the rail with its counts, the search band, the grid or list of file cards with type chips and permission badges, the send panel, the activity panel) and the three overlays. |
+| `public/app.js` | 2425 | The client logic: the key pair in the browser, the non-extractable private key in IndexedDB, the encryption, the key wrapping, the signature, the upload, the download, the decryption, the dashboard rendering, the filters, the bulk actions and the audit trail view. |
+| `public/keyguard.js` | 206 | The three extra keys: the ECDSA signing key, the AES-KW password wrap, and the twelve-word recovery phrase that unlocks the private key on a new device. |
+| `public/style.css` | 1913 | The appearance of the application: the Wayfind theme, the workspace layout, the cards, the overlays and the dark theme. It imports `public/tokens.css` (the tokens) and `public/base.css` (the reset). |
 
 Table A1.2 Test programs and build programs
 
 | File | What it is |
 |---|---|
-| `test/selftest.js` | The server-contract test. Starts the server on an ephemeral port against a temporary data directory and drives the whole contract: registration and the one-time code, the demo access code, the encryption path, the ciphertext on disk, the unauthorised third party, expiry, revocation, starring, the trash, the audit chain, the lockout, the sign-out, the scoping of the trash and the response headers. 20 checks. |
+| `test/selftest.js` | The server-contract test. Starts the server on an ephemeral port against a temporary data directory and drives the whole contract: registration and the one-time code, the demo access code, the encryption path, the ciphertext on disk, the unauthorised third party, expiry, revocation, starring, the trash, the audit chain, the lockout, the sign-out, the scoping of the trash and the response headers. 16 checks. |
 | `test/googletest.js` | The Google verification test. Serves its own public keys and proves the server refuses a token with the wrong audience, the wrong issuer, an expired token, a tampered token, a forged token and a malformed one. 4 checks. |
 | `test/browsertest.js` | The interface test. Launches Chrome or Edge in headless mode with two separate profiles, drives the real forms and buttons over the DevTools protocol, and checks the dashboard, the counts, the evidence panel, the permission and the self-destruct badge, the revocation, the signature, the password protection, the toast, the filters, the bulk bar, the context menu, the shortcut list, the details panel, the security receipt and the announcement of an arriving share. 23 checks. It also captures the screenshots used in Chapter 4. |
 | `test/livecheck.js` | The read-only check against a server that is already running: the site, the assets, the security headers, the published configuration, the access-code gate and the session gates. 15 checks. |
@@ -35,6 +35,8 @@ Table A1.2 Test programs and build programs
 
 The separation of `server/index.js` from `server/store.js`, `server/crypto.js`, `server/trail.js`, `server/mailer.js` and `server/google.js` is intentional. The HTTP interface, the persistence, the password and token primitives, the audit chain, the code delivery and the Google verification can each be read and checked on its own. The client is separated in the same way: `index.html` holds the structure, `app.js` holds the behaviour, `style.css` holds the appearance and `keyguard.js` holds the three keys. The test programs and the builders sit outside the application for the same reason: the tests drive the contract, the interface and a running service without being installed beside the application, and the builders produce the report and the deck while the application itself still installs nothing.
 
+The sign-in page is the first screen, and it is built in the same Wayfind system as the workspace. A hero states the claim and carries the action, with the terms in one line beneath it. The workspace follows as a captured screen, then three named moments from send to receipt, each with its real screen: Encrypted in your browser, The server holds only ciphertext and Proved afterwards. A sample of the encryption code comes next, taken from the send path in `public/app.js`, then the questions a visitor asks and the action again at the close. There is no newsletter and no form that collects an address for one.
+
 ## Appendix 2 Raw Data from the Test Runs
 
 The four commands below were executed on the development machine. The output is reproduced as printed, including the pass lines.
@@ -43,7 +45,7 @@ The four commands below were executed on the development machine. The output is 
 
 Command: `npm test`
 
-The test starts the server on an ephemeral port, registers its users, and prints the following lines on success.
+The test starts the server on an ephemeral port, registers its users, and prints the following twenty lines on success.
 
 ```
 PASS  register + email one-time code verification
@@ -74,7 +76,7 @@ The assertions behind these lines are the ones listed in Table 4.1 as TC-01 to T
 
 Command: `npm run test:browser`
 
-The test requires Chrome or Edge on the machine. If neither is present, it prints a skip line and exits without failing. When a browser is present, it launches two profiles, drives the interface, and prints the following lines on success.
+The test requires Chrome or Edge on the machine. If neither is present, it prints a skip line and exits without failing. When a browser is present, it launches two profiles, drives the interface, and prints the following twenty-three lines on success.
 
 ```
 PASS  alice has a twelve word recovery phrase and a wrapped key on the server
@@ -104,7 +106,7 @@ PASS  a file that arrives is announced
 ALL BROWSER CHECKS PASSED
 ```
 
-These checks correspond to TC-12 to TC-15, TC-28 to TC-31 and TC-38 to TC-45, TC-48 to TC-50 in Table 4.1, and a line is printed only after its assertion has passed. The test plants a marker string in the PDF before sending it, then asserts that the marker does not appear in the stored blob; this is the basis of the eighth line. It reads the stored `CryptoKey` from IndexedDB and asserts that its `extractable` property is `false`; this is the basis of the fifth line.
+These checks correspond to TC-12 to TC-15, TC-28 to TC-31, TC-38 to TC-45 and TC-48 to TC-50 in Table 4.1, and a line is printed only after its assertion has passed. The test plants a marker string in the PDF before sending it, then asserts that the marker does not appear in the stored blob; this is the basis of the eighth line. It reads the stored `CryptoKey` from IndexedDB and asserts that its `extractable` property is `false`; this is the basis of the fifth line.
 
 ### A2.3 Live check against a running server
 

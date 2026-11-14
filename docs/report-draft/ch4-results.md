@@ -4,7 +4,7 @@
 
 The prototype was verified against the objectives stated in Chapter 1 by running the two test layers described in Section 3.8. The first layer, `npm test`, executes the Node self-test and the Google verification test and reports twenty checks on the server contract. The second layer, `npm run test:browser`, launches headless Chrome and drives the real interface in two separate browser profiles, and reports twenty-three checks. Both layers completed with every check passing. This section reports what was observed, and the raw console output is reproduced in Appendix 2.
 
-The functional verification covered twenty-five areas: registration and the one-time code, the demo access code, session behaviour, key publication and custody, the recovery phrase, the encryption and sharing path, the share signature and the permission and expiry it covers, the password-protected share and its two wraps, the unauthorised-access scenario, expiry and revocation, the scoping of the trash, starring, the trash with its restore and purge, the bulk actions, the keyboard shortcuts, the drag to share, the theme, the storage breakdown, the audit trail and its chain, the abuse controls, Google sign-in, the security headers on every response, the details panel and the receipt, the announcement of an arriving share, and the workspace with its integrity badge. Each area corresponds to one or more test cases in Table 4.1.
+The functional verification covered twenty-five areas: registration and the one-time code, the demo access code, session behaviour, key publication and custody, the recovery phrase, the encryption and sharing path, the share signature and the permission and expiry it covers, the password-protected share and its two wraps, the unauthorised-access scenario, expiry and revocation, the scoping of the trash, starring, the trash with its restore and purge, the bulk actions, the keyboard shortcuts, the drag to share, the theme, the storage breakdown, the audit trail and its chain, the abuse controls, Google sign-in, the security headers and the favicon that leave the Google sign-in button working, the details panel and the receipt, the announcement of an arriving share, and the workspace with its integrity badge. Each area corresponds to one or more test cases in Table 4.1.
 
 Table 4.1 Functional test cases and their outcomes
 
@@ -67,7 +67,7 @@ The distinction between TC-01 to TC-27 and the rest is the layer that exercised 
 
 ## 4.2 Results of the Node Self-Test
 
-`npm test` ran two suites. The server self-test registered three users, verified them, and exercised the share path, the access code, expiry, revocation, starring, the trash and the activity trail. The Google verification test then exercised the sign-in path. The twenty checks that the run printed are reproduced in Table 4.2.
+`npm test` ran two suites. The server self-test registered three users, verified them, and exercised the share path, the access code, expiry, revocation, starring, the trash and its scope to the reader, the activity trail and the response headers. The Google verification test then exercised the sign-in path. The twenty checks that the run printed are reproduced in Table 4.2.
 
 Table 4.2 Results of the Node self-test and the Google verification test
 
