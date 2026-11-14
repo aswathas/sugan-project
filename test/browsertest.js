@@ -210,6 +210,9 @@ async function signUp(cdp, sessionId, username) {
   await new Promise((resolve) => (server.listening ? resolve() : server.on('listening', resolve)));
   const PORT = server.address().port;
   SITE = `http://127.0.0.1:${PORT}`;
+  // The server reads this per request, and the Google button only appears on
+  // an origin Google has been given, so the test tells it which one this is.
+  process.env.GOOGLE_ORIGINS = SITE;
 
   const aliceProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'sugan-alice-'));
   const bobProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'sugan-bob-'));
@@ -237,11 +240,18 @@ async function signUp(cdp, sessionId, username) {
         shown: !document.getElementById('google-block').classList.contains('hidden'),
         script: !!document.querySelector('script[src*="accounts.google.com/gsi/client"]'),
         accessCode: !document.getElementById('register-access').classList.contains('hidden'),
+        origins: null,
       }))()`
     );
     assert.ok(google.shown, 'the Google sign-in block must be shown when a client id is configured');
     assert.ok(google.script, 'the Google Identity script must be loaded');
-    console.log('PASS  the Google sign-in button is wired to the client id the server publishes');
+    const config = await evaluate(
+      alice,
+      alicePage,
+      "fetch('/api/config').then((r) => r.json()).then((d) => JSON.stringify(d.authorizedOrigins))"
+    );
+    assert.ok(config.includes('127.0.0.1'), 'the server must publish the authorised origins');
+    console.log('PASS  the Google sign-in button is wired to the client id and the origin the server publishes');
 
     // Alice's private key is on her device only.
     const aliceKey = await evaluate(
@@ -575,6 +585,109 @@ async function signUp(cdp, sessionId, username) {
       'the right password must open the protected file'
     );
     console.log('PASS  a password protected share refuses the wrong password and opens with the right one');
+
+    // The polish pass: toasts, the file type chip, the filters, the bulk bar,
+    // the context menu, the explainer and the shortcut list.
+    const explainer = await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        const panel = document.getElementById('explainer');
+        return panel ? panel.textContent.replace(/\\s+/g, ' ').trim() : '';
+      })()`
+    );
+    assert.ok(explainer.length > 40, 'the sign in screen must explain how the encryption works');
+    assert.ok(explainer.toLowerCase().includes('ciphertext'), 'the explainer must say what the server holds');
+    console.log('PASS  the sign in screen explains how the encryption works');
+
+    const chip = await evaluate(
+      bob,
+      bobPage,
+      `(() => {
+        const card = [...document.querySelectorAll('#cards .card-file')].find((c) => c.textContent.includes('syllabus.pdf'));
+        const chip = card ? card.querySelector('.file-chip') : null;
+        return chip ? chip.textContent.trim() : '';
+      })()`
+    );
+    assert.strictEqual(chip, 'PDF', 'the card must carry a file type chip');
+    console.log('PASS  the card carries a file type chip');
+
+    await evaluate(
+      bob,
+      bobPage,
+      `(() => {
+        const card = [...document.querySelectorAll('#cards .card-file')].find((c) => c.textContent.includes('syllabus.pdf'));
+        const star = [...card.querySelectorAll('button')].find((b) => {
+          const label = (b.getAttribute('aria-label') || b.getAttribute('title') || '').toLowerCase();
+          return label.includes('star');
+        });
+        if (star) star.click();
+        return true;
+      })()`
+    );
+    await waitFor(bob, bobPage, "!!document.querySelector('#toasts .toast')", 'a toast appears');
+    const toast = await evaluate(bob, bobPage, "document.getElementById('toasts').textContent.trim()");
+    assert.ok(toast.length > 0, 'the toast must say what happened');
+    console.log('PASS  the actions give a toast');
+
+    await evaluate(bob, bobPage, "document.querySelector('[data-filter=\"starred\"]').click()");
+    await waitFor(
+      bob,
+      bobPage,
+      "document.querySelectorAll('#cards .card-file').length === 1",
+      'the starred filter shows one file'
+    );
+    const filtered = await evaluate(
+      bob,
+      bobPage,
+      `(() => {
+        const card = document.querySelector('#cards .card-file');
+        return card ? card.textContent.includes('syllabus.pdf') : false;
+      })()`
+    );
+    assert.ok(filtered, 'the starred filter must show the starred file');
+    console.log('PASS  the filter chips narrow the view');
+
+    await evaluate(bob, bobPage, "document.querySelector('[data-filter=\"all\"]').click()");
+    await evaluate(
+      bob,
+      bobPage,
+      `(() => {
+        const card = [...document.querySelectorAll('#cards .card-file')].find((c) => c.textContent.includes('syllabus.pdf'));
+        const box = card.querySelector('input[type="checkbox"]');
+        box.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        return true;
+      })()`
+    );
+    await waitFor(bob, bobPage, "!document.getElementById('bulk-bar').classList.contains('hidden')", 'the bulk bar appears');
+    const bulk = await evaluate(bob, bobPage, "document.getElementById('bulk-count').textContent.trim()");
+    assert.ok(/1/.test(bulk), 'the bulk bar must count the selection');
+    console.log('PASS  the bulk bar appears with the count');
+
+    await evaluate(
+      bob,
+      bobPage,
+      `(() => {
+        const card = [...document.querySelectorAll('#cards .card-file')].find((c) => c.textContent.includes('syllabus.pdf'));
+        card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 200, clientY: 200 }));
+        return true;
+      })()`
+    );
+    await waitFor(bob, bobPage, "!document.getElementById('card-menu').classList.contains('hidden')", 'the context menu opens');
+    await evaluate(bob, bobPage, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+    await waitFor(bob, bobPage, "document.getElementById('card-menu').classList.contains('hidden')", 'the context menu closes');
+    console.log('PASS  a card has a context menu that closes on Escape');
+
+    await evaluate(bob, bobPage, "document.getElementById('shortcuts-button').click()");
+    await waitFor(
+      bob,
+      bobPage,
+      "!document.getElementById('shortcuts-panel').classList.contains('hidden')",
+      'the shortcut list opens'
+    );
+    const shortcuts = await evaluate(bob, bobPage, "document.getElementById('shortcuts-panel').textContent");
+    assert.ok(shortcuts.includes('/') && shortcuts.includes('j'), 'the shortcut list must name the keys');
+    console.log('PASS  the shortcut list opens and names the keys');
 
     console.log('\nALL BROWSER CHECKS PASSED');
   } finally {

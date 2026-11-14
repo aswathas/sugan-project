@@ -76,3 +76,5 @@
 | `tools/build-deliverables.js` | added | builds the report in two passes so the contents page carries the real page numbers, and renders the PDF | every contents entry was checked against the page it lands on |
 | `docs/reportspec-v3.md` | added | the brief for the workspace and lifecycle part of the report | read back after the chapters were accepted |
 | `docs/reportspec-v4.md` | added | the brief for the three extra keys in the report | read back after the chapters were accepted |
+| `test/livecheck.js` | added | a read-only smoke test against a server that is already running: the site, the assets, the security headers, the configuration, the access code gate and the session gates | `npm run test:live` — 15 checks |
+| `tools/test-all.js` | added | runs every check in the project and says how many steps passed | `npm run test:all` — 10 steps |

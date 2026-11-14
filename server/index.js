@@ -184,8 +184,15 @@ async function handleApi(req, res, url) {
   if (route === 'GET /api/config') {
     // Public configuration the browser needs. Nothing secret is exposed here:
     // the client id is public by design, and the client secret never leaves the server.
+    // The authorised origins are published so the page can hide the Google
+    // button on an origin Google would refuse, rather than show a broken one.
+    const origins = (process.env.GOOGLE_ORIGINS || 'http://localhost:3000')
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean);
     return json(res, 200, {
       googleClientId: process.env.GOOGLE_CLIENT_ID || null,
+      authorizedOrigins: origins,
       requireAccessCode: Boolean(process.env.ACCESS_CODE),
     });
   }

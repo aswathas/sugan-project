@@ -58,6 +58,7 @@ let expiry = 0;
 let lastEvidence = null;
 let view = 'inbox';
 let query = '';
+let filterBy = 'all';
 let sortBy = 'newest';
 let layout = readStored(LAYOUT_KEY) === 'list' ? 'list' : 'grid';
 let shares = { inbox: [], sent: [], starred: [], trashed: [] };
@@ -66,6 +67,8 @@ let activeCardId = null;
 let draggedShareId = null;
 let previewShareId = null;
 let previewLastFocus = null;
+let shortcutsLastFocus = null;
+let cardMenuLastFocus = null;
 const selectedIds = new Set();
 const sentFilesCache = new Map();
 // The integrity result of each file this browser has decrypted, so the card can
@@ -277,6 +280,15 @@ async function initGoogleSignIn() {
   }
   if (!config.googleClientId) return;
 
+  // Google refuses an origin it was not given, with an error the user cannot
+  // act on. So the button only appears where it can work.
+  const origins = config.authorizedOrigins || [];
+  if (origins.length && !origins.includes(window.location.origin)) {
+    $('google-note').textContent =
+      `Google sign-in is set up for ${origins.join(' and ')}. Open the site there to use it.`;
+    return;
+  }
+
   $('google-block').classList.remove('hidden');
   const script = document.createElement('script');
   script.src = 'https://accounts.google.com/gsi/client';
@@ -353,6 +365,121 @@ function setMainStatus(message, kind) {
   const status = $('main-status');
   status.textContent = message || '';
   status.className = `status main__status${kind ? ` status--${kind}` : ''}`;
+}
+
+function toast(message, options = {}) {
+  const container = $('toasts');
+  if (!container) return;
+
+  const plate = document.createElement('div');
+  plate.className = 'toast';
+  plate.setAttribute('role', 'status');
+
+  const text = document.createElement('span');
+  text.className = 'toast__message';
+  text.textContent = message;
+  plate.appendChild(text);
+
+  let timer = null;
+  const dismiss = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (plate.parentNode) plate.remove();
+  };
+
+  if (options && options.action && typeof options.onAction === 'function') {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast__action';
+    btn.textContent = options.action;
+    btn.setAttribute('aria-label', `${options.action}: ${message}`);
+    btn.addEventListener('click', () => {
+      dismiss();
+      options.onAction();
+    });
+    plate.appendChild(btn);
+  }
+
+  container.appendChild(plate);
+  timer = setTimeout(dismiss, 4000);
+}
+
+function setFilter(next) {
+  filterBy = next || 'all';
+  for (const chip of document.querySelectorAll('#filter-chips .filter-chip')) {
+    chip.setAttribute('aria-pressed', String(chip.dataset.filter === filterBy));
+  }
+}
+
+function matchesFilter(file, activeFilter, opened) {
+  if (activeFilter === 'unread') {
+    return file.state !== 'trashed' && !file.openedAt && !opened.has(file.id);
+  }
+  if (activeFilter === 'starred') {
+    return Boolean(file.starred);
+  }
+  if (activeFilter === 'expiring') {
+    if (!file.expiresAt) return false;
+    const left = file.expiresAt - Date.now();
+    return left > 0 && left <= 24 * 60 * 60 * 1000;
+  }
+  if (activeFilter === 'view') {
+    return file.permission === 'view';
+  }
+  return true;
+}
+
+function createTypeChip(filename) {
+  const ext = fileExtension(filename);
+  const raw = ext === 'other' ? 'other' : ext.slice(1);
+  const upper = raw.toUpperCase();
+  const label = upper.slice(0, 3);
+
+  let variant = 'file-chip--other';
+  if (ext === '.pdf') {
+    variant = 'file-chip--pdf';
+  } else if (ext === '.txt' || ext === '.md' || ext === '.csv') {
+    variant = 'file-chip--doc';
+  } else if (ext === '.jpg' || ext === '.png' || ext === '.gif') {
+    variant = 'file-chip--img';
+  }
+
+  const chip = document.createElement('span');
+  chip.className = `file-chip ${variant}`;
+  chip.textContent = label;
+  chip.setAttribute('aria-hidden', 'true');
+  return chip;
+}
+
+function renderSkeletonCards() {
+  const container = $('cards');
+  if (!container || view === 'new') return;
+  container.setAttribute('aria-busy', 'true');
+  container.innerHTML = '';
+  for (let i = 0; i < 4; i++) {
+    const row = document.createElement('div');
+    row.className = 'card-skeleton';
+    row.setAttribute('aria-hidden', 'true');
+
+    const title = document.createElement('div');
+    title.className = 'skeleton-line skeleton-line--title';
+    const meta = document.createElement('div');
+    meta.className = 'skeleton-line skeleton-line--meta';
+    const badges = document.createElement('div');
+    badges.className = 'skeleton-badges';
+    const b1 = document.createElement('span');
+    b1.className = 'skeleton-badge';
+    const b2 = document.createElement('span');
+    b2.className = 'skeleton-badge';
+    badges.append(b1, b2);
+    const foot = document.createElement('div');
+    foot.className = 'skeleton-line skeleton-line--foot';
+
+    row.append(title, meta, badges, foot);
+    container.appendChild(row);
+  }
 }
 
 function applyLayout(next) {
@@ -508,6 +635,8 @@ function findShareById(id) {
 
 async function openNewShareFor(recipientUsername) {
   view = 'new';
+  setFilter('all');
+  closeCardMenu();
   selectedIds.clear();
   activeCardId = null;
   render();
@@ -585,7 +714,12 @@ async function refresh() {
   await showRecipientKey();
   renderPeople();
 
-  shares = await api('/api/shares');
+  renderSkeletonCards();
+  try {
+    shares = await api('/api/shares');
+  } finally {
+    if ($('cards')) $('cards').removeAttribute('aria-busy');
+  }
   await renderActivity();
   render();
 }
@@ -709,7 +843,9 @@ function render() {
 
   const current = VIEWS[view] || VIEWS.inbox;
   $('view-title').textContent = current.title;
-  const filtered = current.files().filter((file) => !query || file.filename.toLowerCase().includes(query));
+  const filtered = current.files().filter(
+    (file) => (!query || file.filename.toLowerCase().includes(query)) && matchesFilter(file, filterBy, opened)
+  );
   const files = sortFiles(filtered);
   visibleFiles = files;
 
@@ -733,10 +869,10 @@ function expiryLabel(share) {
 }
 
 function emptyMessageFor(currentView) {
-  if (query) return 'Nothing matches that search.';
+  if (query || filterBy !== 'all') return 'No file matches that search';
   if (currentView === 'sent') return 'You have not sent anything yet.';
   if (currentView === 'starred') return 'No starred files yet.';
-  if (currentView === 'trashed') return 'The trash is empty.';
+  if (currentView === 'trashed') return 'Nothing to restore';
   if (currentView === 'recent') return 'No recent files yet.';
   return 'Nothing has been shared with you yet.';
 }
@@ -753,12 +889,38 @@ function createStarIcon() {
 
 function renderCards(files, direction) {
   const container = $('cards');
+  container.removeAttribute('aria-busy');
   container.innerHTML = '';
   if (!files.length) {
     activeCardId = null;
     const empty = document.createElement('div');
     empty.className = 'cards__empty';
-    empty.textContent = emptyMessageFor(view);
+
+    const message = document.createElement('p');
+    message.textContent = emptyMessageFor(view);
+    empty.appendChild(message);
+
+    if (query || filterBy !== 'all') {
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'btn btn--small';
+      clearBtn.textContent = 'Clear the search';
+      clearBtn.addEventListener('click', () => {
+        query = '';
+        if ($('search')) $('search').value = '';
+        setFilter('all');
+        render();
+      });
+      empty.appendChild(clearBtn);
+    } else if (view !== 'trashed') {
+      const shareBtn = document.createElement('button');
+      shareBtn.type = 'button';
+      shareBtn.className = 'btn btn--primary btn--small';
+      shareBtn.textContent = 'Share a file';
+      shareBtn.addEventListener('click', () => openNewShareFor(null));
+      empty.appendChild(shareBtn);
+    }
+
     container.appendChild(empty);
     return;
   }
@@ -834,6 +996,8 @@ function renderCards(files, direction) {
       live.setAttribute('aria-hidden', 'true');
       top.appendChild(live);
     }
+
+    top.appendChild(createTypeChip(file.filename));
 
     const name = document.createElement('button');
     name.type = 'button';
@@ -960,6 +1124,11 @@ function renderCards(files, direction) {
     }
     foot.appendChild(actions);
 
+    card.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      openCardMenu(file, directionKey, event.clientX, event.clientY, key);
+    });
+
     card.append(top, meta, badges, foot);
     container.appendChild(card);
   }
@@ -973,21 +1142,139 @@ async function copyKeyFor(file, directionKey, chip) {
     return;
   }
   const print = await fingerprint(user.publicKey);
-  chip.textContent = `key ${print}`;
+  if (chip) chip.textContent = `key ${print}`;
   try {
     await navigator.clipboard.writeText(print);
     setMainStatus(`Key fingerprint copied: ${print}`, 'ok');
+    toast('Key fingerprint copied.');
   } catch (err) {
     setMainStatus(`Key fingerprint: ${print}`, 'ok');
   }
 }
 
+/* ---------------- card context menu ---------------- */
+
+function isCardMenuOpen() {
+  const menu = $('card-menu');
+  return Boolean(menu && !menu.classList.contains('hidden'));
+}
+
+function closeCardMenu(restoreFocus = false) {
+  const menu = $('card-menu');
+  if (!menu || menu.classList.contains('hidden')) return;
+  menu.classList.add('hidden');
+  menu.innerHTML = '';
+  if (restoreFocus && cardMenuLastFocus && document.contains(cardMenuLastFocus)) {
+    cardMenuLastFocus.focus();
+  }
+  cardMenuLastFocus = null;
+}
+
+function addCardMenuItem(menu, label, disabled, onClick) {
+  const item = document.createElement('button');
+  item.type = 'button';
+  item.className = 'card-menu__item';
+  item.setAttribute('role', 'menuitem');
+  item.textContent = label;
+  item.disabled = Boolean(disabled);
+  item.addEventListener('click', () => {
+    closeCardMenu();
+    onClick();
+  });
+  menu.appendChild(item);
+}
+
+function openCardMenu(file, directionKey, clientX, clientY, keyChip) {
+  const menu = $('card-menu');
+  if (!menu) return;
+  cardMenuLastFocus = document.activeElement;
+  menu.innerHTML = '';
+
+  if (file.state === 'trashed') {
+    addCardMenuItem(menu, 'Restore', false, () => restoreShare(file.id));
+    addCardMenuItem(menu, 'Purge', file.from !== me, () => purgeShare(file.id, file.filename));
+  } else {
+    if (directionKey === 'from') {
+      addCardMenuItem(menu, 'Open', file.state !== 'live', () => openShare(file.id));
+    } else {
+      addCardMenuItem(menu, 'Details', false, () => showSent(file.id));
+    }
+    addCardMenuItem(
+      menu,
+      file.starred ? 'Unstar' : 'Star',
+      file.state === 'revoked',
+      () => toggleStar(file.id)
+    );
+    addCardMenuItem(
+      menu,
+      'Revoke',
+      !(file.from === me && file.state === 'live' && !file.openedAt),
+      () => revokeShare(file.id)
+    );
+    addCardMenuItem(menu, 'Delete', false, () => deleteShare(file.id));
+    addCardMenuItem(menu, 'Copy the key fingerprint', false, () => copyKeyFor(file, directionKey, keyChip));
+  }
+
+  menu.style.left = '0px';
+  menu.style.top = '0px';
+  menu.classList.remove('hidden');
+
+  const rect = menu.getBoundingClientRect();
+  const maxX = Math.max(8, window.innerWidth - rect.width - 8);
+  const maxY = Math.max(8, window.innerHeight - rect.height - 8);
+  menu.style.left = `${Math.min(Math.max(8, clientX), maxX)}px`;
+  menu.style.top = `${Math.min(Math.max(8, clientY), maxY)}px`;
+
+  const firstEnabled = menu.querySelector('.card-menu__item:not(:disabled)');
+  if (firstEnabled) firstEnabled.focus();
+}
+
+/* ---------------- shortcuts panel ---------------- */
+
+function isShortcutsOpen() {
+  const panel = $('shortcuts-panel');
+  return Boolean(panel && !panel.classList.contains('hidden'));
+}
+
+function openShortcuts() {
+  const panel = $('shortcuts-panel');
+  if (!panel) return;
+  closeCardMenu();
+  shortcutsLastFocus = document.activeElement;
+  panel.classList.remove('hidden');
+  if ($('shortcuts-button')) $('shortcuts-button').setAttribute('aria-expanded', 'true');
+  if ($('shortcuts-close')) $('shortcuts-close').focus();
+}
+
+function closeShortcuts() {
+  if (!isShortcutsOpen()) return;
+  $('shortcuts-panel').classList.add('hidden');
+  if ($('shortcuts-button')) $('shortcuts-button').setAttribute('aria-expanded', 'false');
+  if (shortcutsLastFocus && document.contains(shortcutsLastFocus)) {
+    shortcutsLastFocus.focus();
+  }
+  shortcutsLastFocus = null;
+}
+
 /* ---------------- star, trash, bulk actions ---------------- */
+
+function selectAllBulk() {
+  for (const file of visibleFiles) {
+    selectedIds.add(file.id);
+  }
+  for (const card of document.querySelectorAll('#cards .card-file')) {
+    card.classList.add('card-file--selected');
+    const cb = card.querySelector('.card-file__check');
+    if (cb) cb.checked = true;
+  }
+  renderBulkBar(visibleFiles);
+}
 
 async function toggleStar(id) {
   try {
     const result = await api(`/api/shares/${id}/star`, { method: 'POST' });
     setMainStatus(result.starred ? 'Added to starred.' : 'Removed from starred.', 'ok');
+    toast(result.starred ? 'Starred.' : 'Unstarred.');
     await refresh();
   } catch (err) {
     setMainStatus(`Star failed: ${err.message}`, 'error');
@@ -999,6 +1286,10 @@ async function deleteShare(id) {
     await api(`/api/shares/${id}/delete`, { method: 'POST' });
     selectedIds.delete(id);
     setMainStatus('Moved to trash.', 'ok');
+    toast('File moved to the trash', {
+      action: 'Undo',
+      onAction: () => restoreShare(id),
+    });
     await refresh();
   } catch (err) {
     setMainStatus(`Delete failed: ${err.message}`, 'error');
@@ -1010,6 +1301,7 @@ async function restoreShare(id) {
     await api(`/api/shares/${id}/restore`, { method: 'POST' });
     selectedIds.delete(id);
     setMainStatus('Restored from trash.', 'ok');
+    toast('File restored.');
     await refresh();
   } catch (err) {
     setMainStatus(`Restore failed: ${err.message}`, 'error');
@@ -1022,6 +1314,7 @@ async function purgeShare(id, filename) {
     await api(`/api/shares/${id}/purge`, { method: 'POST' });
     selectedIds.delete(id);
     setMainStatus('Permanently deleted.', 'ok');
+    toast('File purged.');
     await refresh();
   } catch (err) {
     setMainStatus(`Purge failed: ${err.message}`, 'error');
@@ -1038,7 +1331,9 @@ async function bulkStar() {
     for (const share of targets) {
       await api(`/api/shares/${share.id}/star`, { method: 'POST' });
     }
-    setMainStatus(unstarred.length ? `Starred ${targets.length} file(s).` : `Unstarred ${targets.length} file(s).`, 'ok');
+    const msg = unstarred.length ? `Starred ${targets.length} file(s).` : `Unstarred ${targets.length} file(s).`;
+    setMainStatus(msg, 'ok');
+    toast(msg);
     await refresh();
   } catch (err) {
     setMainStatus(`Star failed: ${err.message}`, 'error');
@@ -1055,6 +1350,7 @@ async function bulkRevoke() {
       selectedIds.delete(share.id);
     }
     setMainStatus(`Revoked ${revokable.length} share(s).`, 'ok');
+    toast(revokable.length === 1 ? 'Share revoked. The file stays revoked.' : `Revoked ${revokable.length} shares. They stay revoked.`);
     await refresh();
   } catch (err) {
     setMainStatus(`Revoke failed: ${err.message}`, 'error');
@@ -1065,12 +1361,28 @@ async function bulkDelete() {
   const selectedShares = visibleFiles.filter((s) => selectedIds.has(s.id));
   const deletable = selectedShares.filter((s) => s.state !== 'trashed');
   if (!deletable.length) return;
+  const deletedIds = deletable.map((s) => s.id);
   try {
     for (const share of deletable) {
       await api(`/api/shares/${share.id}/delete`, { method: 'POST' });
       selectedIds.delete(share.id);
     }
     setMainStatus(`Moved ${deletable.length} file(s) to trash.`, 'ok');
+    toast(deletedIds.length === 1 ? 'File moved to the trash' : `${deletedIds.length} files moved to the trash`, {
+      action: 'Undo',
+      onAction: async () => {
+        try {
+          for (const sid of deletedIds) {
+            await api(`/api/shares/${sid}/restore`, { method: 'POST' });
+          }
+          setMainStatus('Restored from trash.', 'ok');
+          toast('File restored.');
+          await refresh();
+        } catch (err) {
+          setMainStatus(`Restore failed: ${err.message}`, 'error');
+        }
+      },
+    });
     await refresh();
   } catch (err) {
     setMainStatus(`Delete failed: ${err.message}`, 'error');
@@ -1345,6 +1657,10 @@ async function openShare(id) {
       );
     }
     URL.revokeObjectURL(url);
+    const toastParts = ['Decrypted'];
+    if (verified) toastParts.push('verified');
+    if (signed === true) toastParts.push('signed');
+    toast(`${toastParts.join(', ')}.`);
     await refresh();
   } catch (err) {
     setMainStatus(`Decrypt failed: ${err.message}`, 'error');
@@ -1371,6 +1687,7 @@ async function revokeShare(id) {
   try {
     await api(`/api/shares/${id}/revoke`, { method: 'POST' });
     setMainStatus('Revoked. The server will not hand the file over any more.', 'ok');
+    toast('Share revoked. The file stays revoked.');
     await refresh();
   } catch (err) {
     setMainStatus(`Revoke failed: ${err.message}`, 'error');
@@ -1475,6 +1792,7 @@ function bindEvents() {
     try {
       await navigator.clipboard.writeText($('phrase-words').textContent);
       setMainStatus('Recovery phrase copied. Keep it somewhere safe.', 'ok');
+      toast('Recovery phrase copied.');
     } catch (err) {
       setMainStatus('Copy it by hand from the panel.', 'error');
     }
@@ -1536,8 +1854,17 @@ function bindEvents() {
   for (const item of document.querySelectorAll('.rail__item')) {
     item.addEventListener('click', () => {
       view = item.dataset.view;
+      setFilter('all');
+      closeCardMenu();
       selectedIds.clear();
       activeCardId = null;
+      render();
+    });
+  }
+
+  for (const chip of document.querySelectorAll('#filter-chips .filter-chip')) {
+    chip.addEventListener('click', () => {
+      setFilter(chip.dataset.filter);
       render();
     });
   }
@@ -1559,6 +1886,7 @@ function bindEvents() {
   $('layout-grid').addEventListener('click', () => applyLayout('grid'));
   $('layout-list').addEventListener('click', () => applyLayout('list'));
 
+  $('bulk-select-all').addEventListener('click', selectAllBulk);
   $('bulk-star').addEventListener('click', bulkStar);
   $('bulk-revoke').addEventListener('click', bulkRevoke);
   $('bulk-delete').addEventListener('click', bulkDelete);
@@ -1566,6 +1894,27 @@ function bindEvents() {
     selectedIds.clear();
     render();
   });
+
+  $('shortcuts-button').addEventListener('click', openShortcuts);
+  $('shortcuts-close').addEventListener('click', closeShortcuts);
+  $('shortcuts-panel').addEventListener('click', (event) => {
+    if (event.target === $('shortcuts-panel')) closeShortcuts();
+  });
+
+  document.addEventListener('click', (event) => {
+    const menu = $('card-menu');
+    if (menu && !menu.classList.contains('hidden') && !menu.contains(event.target)) {
+      closeCardMenu();
+    }
+  });
+  document.addEventListener('contextmenu', (event) => {
+    const menu = $('card-menu');
+    if (menu && !menu.classList.contains('hidden') && !event.target.closest('#cards .card-file')) {
+      closeCardMenu();
+    }
+  });
+  window.addEventListener('resize', () => closeCardMenu());
+  window.addEventListener('scroll', () => closeCardMenu(), true);
 
   $('preview-close').addEventListener('click', closePreview);
   $('preview-dialog').addEventListener('click', (event) => {
@@ -1700,8 +2049,10 @@ function bindEvents() {
         life;
       $('file').value = '';
       describeFile(null);
+      toast('Encrypted and sent.');
       await refresh();
       await showEvidence(share.id, file.name, originalHead);
+      setFilter('all');
       view = 'sent';
       render();
     } catch (err) {
@@ -1714,6 +2065,36 @@ function bindEvents() {
   });
 
   document.addEventListener('keydown', (event) => {
+    if (isShortcutsOpen()) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeShortcuts();
+      }
+      return;
+    }
+
+    if (isCardMenuOpen()) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeCardMenu(true);
+        return;
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const items = [...document.querySelectorAll('#card-menu .card-menu__item:not(:disabled)')];
+        if (!items.length) return;
+        const idx = items.indexOf(document.activeElement);
+        const delta = event.key === 'ArrowDown' ? 1 : -1;
+        const next = idx < 0 ? 0 : (idx + delta + items.length) % items.length;
+        items[next].focus();
+        return;
+      }
+      if (event.key === 'Tab') {
+        closeCardMenu();
+      }
+      return;
+    }
+
     if (isPreviewOpen()) {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -1722,7 +2103,17 @@ function bindEvents() {
       return;
     }
 
+    if ($('password-dialog') && !$('password-dialog').classList.contains('hidden')) return;
+
     if (!me || $('app').classList.contains('hidden')) return;
+
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      $('search').focus();
+      $('search').select();
+      return;
+    }
+
     if (event.ctrlKey || event.metaKey || event.altKey) return;
 
     const target = event.target;

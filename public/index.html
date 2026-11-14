@@ -21,6 +21,7 @@
       <div class="search hidden" id="search-wrap">
         <input class="search__input" id="search" type="search" placeholder="Search files (/)" aria-label="Search files" autocomplete="off">
       </div>
+      <button id="shortcuts-button" class="btn btn--on-ink btn--small" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="shortcuts-panel" aria-label="Keyboard shortcuts">Shortcuts</button>
       <button id="theme-toggle" class="btn btn--on-ink btn--small" type="button" aria-pressed="false" aria-label="Switch to dark theme">Dark theme</button>
     </div>
 
@@ -44,6 +45,24 @@
       Every user gets a key pair generated in their own browser. A file is encrypted before it
       leaves the sender’s device, so the server stores ciphertext and nothing else.
     </p>
+
+    <div id="explainer" class="explainer" aria-label="How it works">
+      <span class="tab">How it works</span>
+      <ol class="explainer__list">
+        <li class="explainer__step">
+          <span class="explainer__num" aria-hidden="true">1</span>
+          <span>Your key pair is made in this browser. The private key never leaves it.</span>
+        </li>
+        <li class="explainer__step">
+          <span class="explainer__num" aria-hidden="true">2</span>
+          <span>The file is encrypted before it leaves your device.</span>
+        </li>
+        <li class="explainer__step">
+          <span class="explainer__num" aria-hidden="true">3</span>
+          <span>The server stores ciphertext. It cannot read the file.</span>
+        </li>
+      </ol>
+    </div>
 
     <div class="auth__panel">
       <div class="tabs" id="tabs">
@@ -180,6 +199,13 @@
             <span class="main__meta" id="view-meta"></span>
           </div>
           <div class="main__tools" id="view-tools">
+            <div class="filter-chips" id="filter-chips" role="group" aria-label="Filter files">
+              <button class="cell filter-chip" type="button" data-filter="all" aria-pressed="true">All</button>
+              <button class="cell filter-chip" type="button" data-filter="unread" aria-pressed="false">Unread</button>
+              <button class="cell filter-chip" type="button" data-filter="starred" aria-pressed="false">Starred</button>
+              <button class="cell filter-chip" type="button" data-filter="expiring" aria-pressed="false">Expiring soon</button>
+              <button class="cell filter-chip" type="button" data-filter="view" aria-pressed="false">View only</button>
+            </div>
             <label class="visually-hidden" for="sort-select">Sort files</label>
             <select class="toolbar-select" id="sort-select" aria-label="Sort files">
               <option value="newest">Newest</option>
@@ -197,7 +223,10 @@
         <p id="main-status" class="status main__status"></p>
 
         <div class="bulk-bar hidden" id="bulk-bar" role="region" aria-label="Bulk actions">
-          <span class="bulk-bar__count" id="bulk-count">0 selected</span>
+          <div class="bulk-bar__left">
+            <button class="btn btn--small" id="bulk-select-all" type="button" aria-label="Select all files in this view">Select all</button>
+            <span class="bulk-bar__count" id="bulk-count">0 selected</span>
+          </div>
           <div class="bulk-bar__actions">
             <button class="btn btn--small" id="bulk-star" type="button">Star</button>
             <button class="btn btn--small" id="bulk-revoke" type="button">Revoke</button>
@@ -374,6 +403,56 @@
     </dl>
   </div>
 </div>
+
+<div id="shortcuts-panel" class="preview-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+  <div class="preview-panel preview-panel--small">
+    <div class="preview-panel__head">
+      <div>
+        <span class="tab">Controls</span>
+        <h3 id="shortcuts-title" class="preview-panel__title">Keyboard and mouse shortcuts</h3>
+      </div>
+      <button id="shortcuts-close" class="btn btn--small" type="button" aria-label="Close shortcuts">Close</button>
+    </div>
+    <dl class="preview-panel__list shortcuts__list">
+      <div class="preview-panel__row">
+        <dt><kbd class="kbd">/</kbd></dt>
+        <dd>Focus search</dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt><kbd class="kbd">n</kbd></dt>
+        <dd>New share</dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt><kbd class="kbd">j</kbd> / <kbd class="kbd">k</kbd></dt>
+        <dd>Move to next or previous file</dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt><kbd class="kbd">Enter</kbd></dt>
+        <dd>Open details for the active file</dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt><kbd class="kbd">Escape</kbd></dt>
+        <dd>Clear selection and search, or close panels</dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt><kbd class="kbd">Ctrl</kbd> + <kbd class="kbd">K</kbd></dt>
+        <dd>Command search</dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt>Right click card</dt>
+        <dd>Open file action menu</dd>
+      </div>
+      <div class="preview-panel__row">
+        <dt>Drag card to person</dt>
+        <dd>Start a new share to that person</dd>
+      </div>
+    </dl>
+  </div>
+</div>
+
+<div id="card-menu" class="card-menu hidden" role="menu" aria-label="File actions"></div>
+
+<div id="toasts" class="toasts" aria-live="polite" aria-atomic="false"></div>
 
 </body>
 </html>
