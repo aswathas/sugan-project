@@ -13,10 +13,15 @@ services:
         value: 0.0.0.0
       - key: PORT
         value: 10000
+      # The origins the Google button may be used from. The first two are the
+      # local demo; the third is this service, whose address Render gives it
+      # from the name above. Google refuses an origin it was not given, so this
+      # list and the client's "Authorized JavaScript origins" must agree.
+      - key: GOOGLE_ORIGINS
+        value: http://localhost:3000,http://127.0.0.1:3000,https://secureshare.onrender.com
       # Set these in the Render dashboard, not here.
       # GOOGLE_CLIENT_ID: the client id from Google Cloud, which makes the
-      #   "Continue with Google" button live. The origin of this service must be
-      #   listed as an authorised JavaScript origin in the Google console.
+      #   "Continue with Google" button live.
       # ACCESS_CODE: if set, registration requires this code. Leave it empty on a
       #   private demo; set it before exposing the service to the internet.
       - key: GOOGLE_CLIENT_ID
