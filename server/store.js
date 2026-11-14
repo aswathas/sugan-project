@@ -11,9 +11,15 @@ const BLOB_DIR = path.join(DATA_DIR, 'blobs');
 function load() {
   try {
     const db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-    return { users: db.users || {}, sessions: db.sessions || {}, shares: db.shares || {} };
+    return {
+      users: db.users || {},
+      sessions: db.sessions || {},
+      shares: db.shares || {},
+      activity: db.activity || [],
+      loginAttempts: db.loginAttempts || {},
+    };
   } catch {
-    return { users: {}, sessions: {}, shares: {} };
+    return { users: {}, sessions: {}, shares: {}, activity: [], loginAttempts: {} };
   }
 }
 
@@ -35,4 +41,13 @@ function readBlob(id) {
   }
 }
 
-module.exports = { DATA_DIR, DB_FILE, BLOB_DIR, load, save, writeBlob, readBlob };
+function removeBlob(id) {
+  try {
+    fs.unlinkSync(path.join(BLOB_DIR, `${id}.bin`));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+module.exports = { DATA_DIR, DB_FILE, BLOB_DIR, load, save, writeBlob, readBlob, removeBlob };

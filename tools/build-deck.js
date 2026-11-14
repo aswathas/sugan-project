@@ -432,17 +432,18 @@ for (const [file, title, cap] of modelSlides) {
       'Authentication and sender-controlled access control ensure that only the intended recipient can open a shared file.',
       'End-to-end encryption protects confidentiality by encrypting files before transmission, so the storage server cannot read them.',
       'Key management keeps the private key on the device, so a compromise of the server does not compromise the files.',
-      'The prototype is a practical, free system that can be extended with integrity verification and a public deployment.',
+      'A self-destruct timer, revocation, an integrity fingerprint and a tamper-evident audit trail now guard each share.',
+      'The prototype is a practical, free system that runs on any laptop with no installation and no paid service.',
     ],
     { x: 0.9, y: 1.8, w: 7.6, h: 4.4, fontSize: 13 }
   );
   slide.addShape(pptx.ShapeType.rect, { x: 8.85, y: 1.8, w: 3.6, h: 3.5, fill: { color: INK } });
   slide.addText('STATED LIMITS', { x: 9.05, y: 2.0, w: 3.2, h: 0.3, fontFace: FONT, fontSize: 11, bold: true, color: AMBER, margin: 0 });
   slide.addText(
-    'View-only is an interface rule, not a cryptographic one: once a recipient decrypts, the plaintext is theirs.\n\nThere are no roles, no revocation and no audit trail yet.\n\nA lost device means a lost private key and unreadable files.',
-    { x: 9.05, y: 2.4, w: 3.2, h: 2.7, fontFace: FONT, fontSize: 11, color: PAPER, margin: 0, lineSpacingMultiple: 1.15 }
+    'View-only is an interface rule, not a cryptographic one: once a recipient decrypts, the plaintext is theirs.\n\nThe server holds a SHA-256 fingerprint of the plaintext, which is a content fingerprint.\n\nRevocation cannot un-download a file the recipient already has.\n\nA lost device means a lost private key and unreadable files.',
+    { x: 9.05, y: 2.35, w: 3.2, h: 2.85, fontFace: FONT, fontSize: 10, color: PAPER, margin: 0, lineSpacingMultiple: 1.12 }
   );
-  slide.addText('Future work: digital signatures, key revocation and recovery, forward secrecy, a public HTTPS deployment with OAuth, attribute-based policies, and an independent audit of the stored data.', {
+  slide.addText('Future work: digital signatures, key recovery, forward secrecy, attribute-based policies, and a deployment that survives the loss of the single node.', {
     x: 8.85, y: 5.55, w: 3.6, h: 1.3, fontFace: FONT, fontSize: 11, color: MUTED, margin: 0, lineSpacingMultiple: 1.15,
   });
 }

@@ -176,6 +176,46 @@ async function verify(username, code) {
   assert.strictEqual(decrypted.toString('utf8'), plaintext.toString('utf8'), 'decrypted file must match the original');
 
   // The new features: self-destruct, revocation, the audit trail.
+  const starred = await call(`/api/shares/${shareId}/star`, { method: 'POST', cookie: bobCookie });
+  assert.strictEqual(starred.body.starred, true, 'starring must report the new state');
+  const starredList = await call('/api/shares', { cookie: bobCookie });
+  assert.strictEqual(starredList.body.starred.length, 1, 'the starred share must be in the starred list');
+  const unstarred = await call(`/api/shares/${shareId}/star`, { method: 'POST', cookie: bobCookie });
+  assert.strictEqual(unstarred.body.starred, false, 'starring again must take the star back');
+  const unstarredList = await call('/api/shares', { cookie: bobCookie });
+  assert.strictEqual(unstarredList.body.starred.length, 0, 'the starred list must be empty again');
+
+  // The trash: delete, restore, then purge for good.
+  const trashed = await call('/api/shares', {
+    method: 'POST',
+    cookie: aliceCookie,
+    body: {
+      recipient: 'bob',
+      filename: 'draft.pdf',
+      size: 5,
+      permission: 'view',
+      iv: b64(iv),
+      wrappedKey: b64(wrappedKey),
+      ciphertext: b64(ciphertext),
+    },
+  });
+  const draftId = trashed.body.id;
+  await call(`/api/shares/${draftId}/delete`, { method: 'POST', cookie: aliceCookie });
+  const afterDelete = await call('/api/shares', { cookie: aliceCookie });
+  assert.strictEqual(afterDelete.body.sent.length, 1, 'a deleted share must leave the sent list');
+  assert.strictEqual(afterDelete.body.trashed.length, 1, 'a deleted share must be in the trash');
+  const deletedBlob = await call(`/api/shares/${draftId}/blob`, { cookie: bobCookie });
+  assert.strictEqual(deletedBlob.status, 410, 'a share in the trash must not hand over its bytes');
+  await call(`/api/shares/${draftId}/restore`, { method: 'POST', cookie: aliceCookie });
+  const afterRestore = await call('/api/shares', { cookie: aliceCookie });
+  assert.strictEqual(afterRestore.body.sent.length, 2, 'a restored share must come back');
+  assert.strictEqual(afterRestore.body.trashed.length, 0, 'the trash must be empty again');
+  await call(`/api/shares/${draftId}/delete`, { method: 'POST', cookie: aliceCookie });
+  await call(`/api/shares/${draftId}/purge`, { method: 'POST', cookie: aliceCookie });
+  const afterPurge = await call('/api/shares', { cookie: aliceCookie });
+  assert.strictEqual(afterPurge.body.trashed.length, 0, 'a purged share must be gone for good');
+  const purged = await call(`/api/shares/${draftId}`, { cookie: aliceCookie });
+  assert.strictEqual(purged.status, 404, 'a purged share must no longer exist');
   const short = await call('/api/shares', {
     method: 'POST',
     cookie: aliceCookie,
@@ -333,6 +373,7 @@ async function verify(username, code) {
   console.log('PASS  the audit trail is a hash chain and it checks out');
   console.log('PASS  repeated failed sign-ins and wrong codes are locked out');
   console.log('PASS  signing out everywhere ends every session of the account');
+  console.log('PASS  starring is per user, and delete, restore and purge behave');
 
   server.close();
   fs.rmSync(DATA_DIR, { recursive: true, force: true });

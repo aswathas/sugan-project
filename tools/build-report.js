@@ -8,37 +8,68 @@
 
 const fs = require('fs');
 const path = require('path');
+
+function loadDocx() {
+  const arg = process.argv[2];
+  if (arg) {
+    const candidates = [
+      path.resolve(arg, 'node_modules', 'docx'),
+      path.resolve(arg, 'docx'),
+      path.resolve(arg),
+    ];
+    for (const candidate of candidates) {
+      if (fs.existsSync(path.join(candidate, 'package.json'))) {
+        let layout = null;
+        try { layout = require(path.join(candidate, 'dist', 'layout.cjs')); } catch (_) {}
+        return { docx: require(candidate), layout };
+      }
+    }
+  }
+  let layout = null;
+  try { layout = require('docx/layout'); } catch (_) {}
+  return { docx: require('docx'), layout };
+}
+
+const { docx, layout } = loadDocx();
 const {
   AlignmentType,
+  Bookmark,
   BorderStyle,
   Document,
   Footer,
+  Header,
   HeadingLevel,
   ImageRun,
   LevelFormat,
-  Numbering,
   Packer,
-  PageBreak,
   PageNumber,
+  PageReference,
   Paragraph,
+  SectionType,
   ShadingType,
   Table,
   TableCell,
   TableLayoutType,
+  TableOfContents,
   TableRow,
   TextRun,
   WidthType,
-} = require('docx');
+} = docx;
 
 const ROOT = path.resolve(__dirname, '..');
 const DRAFT = path.join(ROOT, 'docs', 'report-draft');
 const FIGURES = path.join(ROOT, 'docs', 'figures', 'png');
 const SHOTS = path.join(ROOT, 'docs', 'screenshots');
+const LOGO = path.join(ROOT, 'docs', 'brand', 'srm-logo.jpeg');
 const OUT = path.join(ROOT, 'report', 'SecureShare-Project-Report.docx');
 
 const BODY_FONT = 'Times New Roman';
-const CONTENT_WIDTH = 9026; // A4 (11906) minus 1 inch margins on each side, in twips
+const PAGE_WIDTH = 11906; // A4 width in twips
+const PAGE_HEIGHT = 16838; // A4 height in twips
+const MARGIN = 1440; // 1 inch in twips
+const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2; // 9026 twips
 const IMAGE_WIDTH_PX = 590;
+const LOGO_WIDTH_PX = 230; // ~2.4 inches at 96 dpi
 
 const numbering = {
   config: [
@@ -72,7 +103,7 @@ const numbering = {
 const styles = {
   default: {
     document: {
-      run: { font: BODY_FONT, size: 24 },
+      run: { font: BODY_FONT, size: 24, color: '000000' },
       paragraph: { spacing: { line: 360, after: 140 }, alignment: AlignmentType.JUSTIFIED },
     },
   },
@@ -83,8 +114,13 @@ const styles = {
       basedOn: 'Normal',
       next: 'Normal',
       quickFormat: true,
-      run: { font: BODY_FONT, size: 32, bold: true },
-      paragraph: { spacing: { before: 240, after: 240 }, pageBreakBefore: true, outlineLevel: 0 },
+      run: { font: BODY_FONT, size: 32, bold: true, color: '000000' },
+      paragraph: {
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 240, after: 240 },
+        pageBreakBefore: true,
+        outlineLevel: 0,
+      },
     },
     {
       id: 'Heading2',
@@ -92,8 +128,8 @@ const styles = {
       basedOn: 'Normal',
       next: 'Normal',
       quickFormat: true,
-      run: { font: BODY_FONT, size: 28, bold: true },
-      paragraph: { spacing: { before: 280, after: 140 }, outlineLevel: 1 },
+      run: { font: BODY_FONT, size: 28, bold: true, color: '000000' },
+      paragraph: { alignment: AlignmentType.LEFT, spacing: { before: 280, after: 140 }, outlineLevel: 1 },
     },
     {
       id: 'Heading3',
@@ -101,8 +137,32 @@ const styles = {
       basedOn: 'Normal',
       next: 'Normal',
       quickFormat: true,
-      run: { font: BODY_FONT, size: 26, bold: true },
-      paragraph: { spacing: { before: 220, after: 120 }, outlineLevel: 2 },
+      run: { font: BODY_FONT, size: 26, bold: true, color: '000000' },
+      paragraph: { alignment: AlignmentType.LEFT, spacing: { before: 220, after: 120 }, outlineLevel: 2 },
+    },
+    {
+      id: 'TOC1',
+      name: 'toc 1',
+      basedOn: 'Normal',
+      next: 'Normal',
+      run: { font: BODY_FONT, size: 22, bold: true, color: '000000' },
+      paragraph: { alignment: AlignmentType.LEFT, spacing: { before: 80, after: 60, line: 260 } },
+    },
+    {
+      id: 'TOC2',
+      name: 'toc 2',
+      basedOn: 'Normal',
+      next: 'Normal',
+      run: { font: BODY_FONT, size: 22, color: '000000' },
+      paragraph: { alignment: AlignmentType.LEFT, indent: { left: 360 }, spacing: { after: 40, line: 260 } },
+    },
+    {
+      id: 'TOC3',
+      name: 'toc 3',
+      basedOn: 'Normal',
+      next: 'Normal',
+      run: { font: BODY_FONT, size: 22, color: '000000' },
+      paragraph: { alignment: AlignmentType.LEFT, indent: { left: 720 }, spacing: { after: 40, line: 260 } },
     },
   ],
 };
@@ -152,16 +212,16 @@ function parseMarkdown(markdown) {
       continue;
     }
 
-    const heading = trimmed.match(/^(#{1,4})\s+(.*)$/);
-    if (heading) {
-      blocks.push({ type: 'heading', level: heading[1].length, text: heading[2] });
+    const headingMatch = trimmed.match(/^(#{1,4})\s+(.*)$/);
+    if (headingMatch) {
+      blocks.push({ type: 'heading', level: headingMatch[1].length, text: headingMatch[2] });
       i += 1;
       continue;
     }
 
-    const figure = trimmed.match(/^\[FIGURE:\s*(.+?)\]$/);
-    if (figure) {
-      blocks.push({ type: 'figure', path: figure[1], caption: pendingCaption });
+    const figureMatch = trimmed.match(/^\[FIGURE:\s*(.+?)\]$/);
+    if (figureMatch) {
+      blocks.push({ type: 'figure', path: figureMatch[1], caption: pendingCaption });
       pendingCaption = null;
       i += 1;
       continue;
@@ -210,9 +270,16 @@ function parseMarkdown(markdown) {
     }
 
     if (/^(Table|Figure)\s+[A-Za-z0-9.]+\s/.test(trimmed)) {
-      pendingCaption = trimmed;
-      i += 1;
-      continue;
+      let nextIndex = i + 1;
+      while (nextIndex < lines.length && !lines[nextIndex].trim()) nextIndex += 1;
+      const next = (lines[nextIndex] || '').trim();
+      const isFigureCaption = trimmed.startsWith('Figure ') && next.startsWith('[FIGURE:');
+      const isTableCaption = trimmed.startsWith('Table ') && next.startsWith('|');
+      if (isFigureCaption || isTableCaption) {
+        pendingCaption = trimmed;
+        i += 1;
+        continue;
+      }
     }
 
     const paragraph = [];
@@ -226,22 +293,56 @@ function parseMarkdown(markdown) {
   return blocks;
 }
 
+/* ---------------- image helpers ---------------- */
+
+function pngDimensions(buffer) {
+  if (buffer.length < 24 || buffer.toString('ascii', 12, 16) !== 'IHDR') {
+    throw new Error('Expected a valid PNG with an IHDR chunk');
+  }
+  return {
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20),
+  };
+}
+
+function jpegDimensions(buffer) {
+  let offset = 2;
+  while (offset + 8 < buffer.length) {
+    if (buffer[offset] !== 0xff) break;
+    const marker = buffer[offset + 1];
+    if (marker >= 0xc0 && marker <= 0xc3) {
+      return {
+        height: buffer.readUInt16BE(offset + 5),
+        width: buffer.readUInt16BE(offset + 7),
+      };
+    }
+    const segLen = buffer.readUInt16BE(offset + 2);
+    offset += 2 + segLen;
+  }
+  return { width: 234, height: 106 };
+}
+
 /* ---------------- rendering ---------------- */
 
 function heading(text, level) {
   const map = { 1: HeadingLevel.HEADING_1, 2: HeadingLevel.HEADING_2, 3: HeadingLevel.HEADING_3, 4: HeadingLevel.HEADING_3 };
-  return new Paragraph({ heading: map[level] || HeadingLevel.HEADING_3, children: inlineRuns(text, { size: 24 }) });
-}
-
-function captionParagraph(text) {
+  const sizes = { 1: 32, 2: 28, 3: 26, 4: 26 };
   return new Paragraph({
-    spacing: { before: 120, after: 80 },
-    alignment: AlignmentType.CENTER,
-    children: [new TextRun({ text, font: BODY_FONT, size: 20, italics: false })],
+    heading: map[level] || HeadingLevel.HEADING_3,
+    children: inlineRuns(text, { size: sizes[level] || 26, bold: true }),
   });
 }
 
-function figureBlock(block) {
+function captionParagraph(text, bookmarkId) {
+  const run = new TextRun({ text, font: BODY_FONT, size: 20, italics: false });
+  return new Paragraph({
+    spacing: { before: 120, after: 80 },
+    alignment: AlignmentType.CENTER,
+    children: bookmarkId ? [new Bookmark({ id: bookmarkId, children: [run] })] : [run],
+  });
+}
+
+function figureBlock(block, tracker) {
   const source = block.path.replace(/\\/g, '/');
   const base = path.basename(source).replace(/\.[^.]+$/, '');
   const png = path.join(FIGURES, `${base}.png`);
@@ -250,19 +351,31 @@ function figureBlock(block) {
   if (!fs.existsSync(file)) {
     return [new Paragraph({ children: [new TextRun({ text: `[missing figure: ${block.path}]`, font: BODY_FONT, size: 22 })] })];
   }
-  const size = png === file ? { width: IMAGE_WIDTH_PX, height: Math.round((IMAGE_WIDTH_PX * 675) / 1200) } : { width: IMAGE_WIDTH_PX, height: Math.round((IMAGE_WIDTH_PX * 900) / 1280) };
+  const data = fs.readFileSync(file);
+  const { width, height } = pngDimensions(data);
+  const size = {
+    width: IMAGE_WIDTH_PX,
+    height: Math.round((IMAGE_WIDTH_PX * height) / width),
+  };
   const out = [
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { before: 160, after: 60 },
-      children: [new ImageRun({ type: 'png', data: fs.readFileSync(file), transformation: size })],
+      children: [new ImageRun({ type: 'png', data, transformation: size })],
     }),
   ];
-  if (block.caption) out.push(captionParagraph(block.caption));
+  if (block.caption) {
+    let bookmarkId = null;
+    if (tracker) {
+      bookmarkId = `fig_${tracker.figures.length + 1}`;
+      tracker.figures.push({ id: bookmarkId, caption: block.caption });
+    }
+    out.push(captionParagraph(block.caption, bookmarkId));
+  }
   return out;
 }
 
-function tableBlock(block) {
+function tableBlock(block, tracker) {
   const columns = block.rows[0].length;
   const weights = new Array(columns).fill(1);
   for (let c = 0; c < columns; c += 1) {
@@ -303,10 +416,16 @@ function tableBlock(block) {
 
   const out = [];
   if (block.caption) {
+    let bookmarkId = null;
+    if (tracker) {
+      bookmarkId = `tbl_${tracker.tables.length + 1}`;
+      tracker.tables.push({ id: bookmarkId, caption: block.caption });
+    }
+    const run = new TextRun({ text: block.caption, font: BODY_FONT, size: 20, bold: true });
     out.push(
       new Paragraph({
         spacing: { before: 200, after: 80 },
-        children: [new TextRun({ text: block.caption, font: BODY_FONT, size: 20, bold: true })],
+        children: bookmarkId ? [new Bookmark({ id: bookmarkId, children: [run] })] : [run],
       })
     );
   }
@@ -322,7 +441,7 @@ function tableBlock(block) {
   return out;
 }
 
-function renderBlocks(blocks) {
+function renderBlocks(blocks, tracker) {
   const children = [];
   for (const block of blocks) {
     if (block.type === 'heading') children.push(heading(block.text, block.level));
@@ -335,63 +454,265 @@ function renderBlocks(blocks) {
       for (const item of block.items) {
         children.push(new Paragraph({ numbering: { reference: 'numbers', level: 0 }, children: inlineRuns(item) }));
       }
-    } else if (block.type === 'figure') children.push(...figureBlock(block));
-    else if (block.type === 'table') children.push(...tableBlock(block));
+    } else if (block.type === 'figure') children.push(...figureBlock(block, tracker));
+    else if (block.type === 'table') children.push(...tableBlock(block, tracker));
   }
   return children;
 }
 
-/* ---------------- front matter ---------------- */
+/* ---------------- title page, header, footer ---------------- */
 
 function titlePage() {
-  const centre = (text, size, bold, spacing) =>
+  const centre = (text, size, bold, spacing, italics = false) =>
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { before: spacing || 0, after: spacing || 0, line: 300 },
-      children: [new TextRun({ text, font: BODY_FONT, size, bold })],
+      spacing: { before: spacing.before || 0, after: spacing.after || 0, line: spacing.line || 300 },
+      children: [new TextRun({ text, font: BODY_FONT, size, bold, italics })],
     });
+
+  const children = [];
+
+  if (fs.existsSync(LOGO)) {
+    const logoData = fs.readFileSync(LOGO);
+    const { width, height } = jpegDimensions(logoData);
+    children.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 0, after: 200 },
+        children: [
+          new ImageRun({
+            type: 'jpg',
+            data: logoData,
+            transformation: {
+              width: LOGO_WIDTH_PX,
+              height: Math.round((LOGO_WIDTH_PX * height) / width),
+            },
+          }),
+        ],
+      })
+    );
+  }
+
+  children.push(
+    centre('SRM Institute of Science and Technology', 32, true, { before: 80, after: 60 }),
+    centre('College of Engineering and Technology', 28, true, { after: 60 }),
+    centre('Department of Electronics and Communication Engineering', 26, true, { after: 80 }),
+    centre('Academic Year: 2026-2027 (ODD)', 24, true, { before: 60, after: 480 }),
+    centre('21ECC402P', 28, true, { after: 60 }),
+    centre('COMPUTER COMMUNICATION AND NETWORK SECURITY', 26, true, { after: 480 }),
+    centre('SECURE FILE SHARING SYSTEM', 34, true, { after: 60 }),
+    centre('USING END-TO-END ENCRYPTION', 34, true, { after: 60 }),
+    centre('AND ACCESS CONTROL', 34, true, { after: 420 }),
+    centre('By', 24, false, { after: 220 }, true)
+  );
+
+  const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+  const noBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
+  const team = [
+    ['1. PRADEESH M', '-RA2311004010278'],
+    ['2. VARUN P R', '-RA2311004010287'],
+    ['3. SUGANDHAN A', '-RA2311004010297'],
+  ];
+
+  children.push(
+    new Table({
+      alignment: AlignmentType.CENTER,
+      width: { size: 6400, type: WidthType.DXA },
+      columnWidths: [3400, 3000],
+      layout: TableLayoutType.FIXED,
+      rows: team.map(([name, reg]) =>
+        new TableRow({
+          children: [
+            new TableCell({
+              width: { size: 3400, type: WidthType.DXA },
+              borders: noBorders,
+              margins: { top: 40, bottom: 40, left: 120, right: 80 },
+              children: [
+                new Paragraph({
+                  alignment: AlignmentType.LEFT,
+                  spacing: { after: 0, line: 280 },
+                  children: [new TextRun({ text: name, font: BODY_FONT, size: 24 })],
+                }),
+              ],
+            }),
+            new TableCell({
+              width: { size: 3000, type: WidthType.DXA },
+              borders: noBorders,
+              margins: { top: 40, bottom: 40, left: 80, right: 120 },
+              children: [
+                new Paragraph({
+                  alignment: AlignmentType.LEFT,
+                  spacing: { after: 0, line: 280 },
+                  children: [new TextRun({ text: reg, font: BODY_FONT, size: 24 })],
+                }),
+              ],
+            }),
+          ],
+        })
+      ),
+    })
+  );
+
+  children.push(
+    centre('System name: SecureShare', 24, true, { before: 480, after: 80 }),
+    centre('November 2026', 24, false, { after: 0 })
+  );
+
+  return children;
+}
+
+function runningHeader() {
+  return new Header({
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 0, after: 20, line: 240 },
+        children: [
+          new TextRun({
+            text: 'SRM Institute of Science and Technology | Department of Electronics and Communication Engineering',
+            font: BODY_FONT,
+            size: 18,
+          }),
+        ],
+      }),
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 0, after: 80, line: 240 },
+        border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: '888888', space: 4 } },
+        children: [
+          new TextRun({
+            text: '21ECC402P - Computer Communication and Network Security | SecureShare',
+            font: BODY_FONT,
+            size: 18,
+            bold: true,
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+function pageFooter() {
+  return new Footer({
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 0, after: 0 },
+        children: [
+          new TextRun({ text: 'Page ', font: BODY_FONT, size: 20 }),
+          new TextRun({ children: [PageNumber.CURRENT], font: BODY_FONT, size: 20 }),
+        ],
+      }),
+    ],
+  });
+}
+
+/* ---------------- front matter helpers ---------------- */
+
+function heading1Paragraph(text) {
+  return new Paragraph({
+    heading: HeadingLevel.HEADING_1,
+    children: [new TextRun({ text, font: BODY_FONT, size: 32, bold: true })],
+  });
+}
+
+function extractAbstractBlocks(frontBlocks) {
+  const out = [];
+  let inAbstract = false;
+  for (const block of frontBlocks) {
+    if (block.type === 'heading') {
+      if (/^abstract$/i.test(block.text.trim())) {
+        inAbstract = true;
+        continue;
+      }
+      if (inAbstract) break;
+      continue;
+    }
+    if (inAbstract && block.type === 'paragraph') out.push(block);
+  }
+  return out;
+}
+
+function captionListTable(entries, numberLabel) {
+  const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+  const noBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
+  const widths = [1200, 6626, 1200];
+
+  const makeCell = (width, alignment, content) =>
+    new TableCell({
+      width: { size: width, type: WidthType.DXA },
+      borders: noBorders,
+      margins: { top: 40, bottom: 40, left: 40, right: 40 },
+      children: [
+        new Paragraph({
+          alignment,
+          spacing: { after: 0, line: 260 },
+          children: content,
+        }),
+      ],
+    });
+
+  const headerRow = new TableRow({
+    tableHeader: true,
+    children: [
+      makeCell(widths[0], AlignmentType.LEFT, [new TextRun({ text: numberLabel, font: BODY_FONT, size: 22, bold: true })]),
+      makeCell(widths[1], AlignmentType.LEFT, [new TextRun({ text: 'Parameters', font: BODY_FONT, size: 22, bold: true })]),
+      makeCell(widths[2], AlignmentType.RIGHT, [new TextRun({ text: 'Page No.', font: BODY_FONT, size: 22, bold: true })]),
+    ],
+  });
+
+  const dataRows = entries.map(({ id, caption }) => {
+    const match = caption.match(/^(?:Table|Figure)\s+(A\s*\d+(?:\.\d+)*|\d+(?:\.\d+)*)\s+(.*)$/);
+    const num = match ? match[1] : '';
+    const title = match ? match[2] : caption;
+    return new TableRow({
+      children: [
+        makeCell(widths[0], AlignmentType.LEFT, [new TextRun({ text: num, font: BODY_FONT, size: 22 })]),
+        makeCell(widths[1], AlignmentType.LEFT, [new TextRun({ text: title, font: BODY_FONT, size: 22 })]),
+        makeCell(widths[2], AlignmentType.RIGHT, [new PageReference(id)]),
+      ],
+    });
+  });
+
+  return new Table({
+    width: { size: CONTENT_WIDTH, type: WidthType.DXA },
+    columnWidths: widths,
+    layout: TableLayoutType.FIXED,
+    rows: [headerRow, ...dataRows],
+  });
+}
+
+function publicationDetailsSection() {
+  const line = (text, spacing = { after: 120, line: 320 }) =>
+    new Paragraph({
+      alignment: AlignmentType.LEFT,
+      spacing,
+      children: [new TextRun({ text, font: BODY_FONT, size: 24 })],
+    });
+
   return [
-    centre('21ECC402P', 28, true, 1200),
-    centre('COMPUTER COMMUNICATION AND NETWORK SECURITY', 28, true, 240),
-    centre('', 24, false, 600),
-    centre('SECURE FILE SHARING SYSTEM', 36, true, 0),
-    centre('USING END-TO-END ENCRYPTION', 36, true, 120),
-    centre('AND ACCESS CONTROL', 36, true, 480),
-    centre('A report submitted for review', 24, false, 240),
-    centre('Project team', 24, true, 240),
-    centre('Pradeesh M (RA2311004010278)', 24, false, 60),
-    centre('Varun P R (RA2311004010287)', 24, false, 60),
-    centre('Sugandhan A (RA2311004010297)', 24, false, 60),
-    centre('', 24, false, 600),
-    centre('System name: SecureShare', 24, false, 120),
-    centre('November 2026', 24, false, 0),
-    new Paragraph({ children: [new PageBreak()] }),
+    heading1Paragraph('PUBLICATION DETAILS'),
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: 'The paper published by the students during the period of the project work is given below. The proof of the published paper or the publication certificate is attached after this page.',
+          font: BODY_FONT,
+          size: 24,
+        }),
+      ],
+    }),
+    line('Title of paper: [Title of the published paper]', { before: 120, after: 120, line: 320 }),
+    line('Authors: Pradeesh M, Varun P R, Sugandhan A'),
+    line('Journal / Conference: [Name of the journal or conference]'),
+    line('Volume, pages: [Volume (issue), pp. xx-xx]'),
+    line('Date: [Month year of publication]'),
+    line('Status: [Published / Accepted]'),
   ];
 }
 
-function sectionFromFile(file) {
+function sectionFromFile(file, tracker) {
   const blocks = parseMarkdown(fs.readFileSync(path.join(DRAFT, file), 'utf8'));
-  return renderBlocks(blocks);
-}
-
-function staticList(items) {
-  return items.map((item) =>
-    new Paragraph({
-      spacing: { after: 60, line: 260 },
-      children: [new TextRun({ text: item, font: BODY_FONT, size: 22 })],
-    })
-  );
-}
-
-function collectHeadings(files) {
-  const entries = [];
-  for (const file of files) {
-    const blocks = parseMarkdown(fs.readFileSync(path.join(DRAFT, file), 'utf8'));
-    for (const block of blocks) {
-      if (block.type === 'heading' && block.level <= 2) entries.push({ text: block.text, level: block.level });
-    }
-  }
-  return entries;
+  return renderBlocks(blocks, tracker);
 }
 
 function main() {
@@ -404,82 +725,101 @@ function main() {
   ];
 
   const front = parseMarkdown(fs.readFileSync(path.join(DRAFT, 'front-matter.md'), 'utf8'));
-  const abstract = front.filter((b) => b.type !== 'heading' && b.type !== 'table');
+  const abstract = extractAbstractBlocks(front);
   const abbreviationTable = front.find((b) => b.type === 'table');
-  const listOfTables = front.filter((b) => b.type === 'paragraph' && /^Table\s/.test(b.text)).map((b) => b.text);
-  const listOfFigures = front.filter((b) => b.type === 'paragraph' && /^Figure\s/.test(b.text)).map((b) => b.text);
 
-  const children = [];
-
-  children.push(...titlePage());
-
-  children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'ABSTRACT', font: BODY_FONT, size: 32, bold: true })] }));
-  for (const block of abstract) {
-    children.push(new Paragraph({ children: inlineRuns(block.text) }));
+  const tracker = { tables: [], figures: [] };
+  const chapterChildren = [];
+  for (const file of chapters) {
+    chapterChildren.push(...sectionFromFile(file, tracker));
   }
-  children.push(new Paragraph({ children: [new PageBreak()] }));
 
-  children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'TABLE OF CONTENTS', font: BODY_FONT, size: 32, bold: true })] }));
-  for (const entry of collectHeadings(chapters)) {
-    children.push(
-      new Paragraph({
-        spacing: { after: 60, line: 260 },
-        indent: entry.level === 1 ? { left: 0 } : { left: 360 },
-        children: [new TextRun({ text: entry.text, font: BODY_FONT, size: 22, bold: entry.level === 1 })],
-      })
-    );
-  }
-  children.push(new Paragraph({ children: [new PageBreak()] }));
-
-  children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'LIST OF TABLES', font: BODY_FONT, size: 32, bold: true })] }));
-  children.push(...staticList(listOfTables));
-  children.push(new Paragraph({ children: [new PageBreak()] }));
-
-  children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'LIST OF FIGURES', font: BODY_FONT, size: 32, bold: true })] }));
-  children.push(...staticList(listOfFigures));
-  children.push(new Paragraph({ children: [new PageBreak()] }));
-
-  children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'LIST OF ABBREVIATIONS', font: BODY_FONT, size: 32, bold: true })] }));
-  if (abbreviationTable) children.push(...tableBlock({ ...abbreviationTable, caption: 'Table A1.1 Abbreviations used in the report' }));
-  children.push(new Paragraph({ children: [new PageBreak()] }));
-
-  for (const file of chapters) children.push(...sectionFromFile(file));
-
-  children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: 'REFERENCES', font: BODY_FONT, size: 32, bold: true })] }));
-  for (const block of renderBlocks(parseMarkdown(fs.readFileSync(path.join(DRAFT, 'references.md'), 'utf8')))) {
+  const referencesChildren = [];
+  referencesChildren.push(heading1Paragraph('REFERENCES'));
+  const referencesBlocks = parseMarkdown(fs.readFileSync(path.join(DRAFT, 'references.md'), 'utf8')).filter((b) => b.type !== 'heading');
+  for (const block of renderBlocks(referencesBlocks)) {
     if (block instanceof Paragraph) {
-      children.push(new Paragraph({ spacing: { after: 120, line: 280 }, indent: { left: 480, hanging: 480 }, children: block.children }));
+      referencesChildren.push(
+        new Paragraph({
+          spacing: { after: 120, line: 280 },
+          indent: { left: 480, hanging: 480 },
+          children: block.children,
+        })
+      );
     }
   }
-  children.push(new Paragraph({ children: [new PageBreak()] }));
 
-  children.push(...sectionFromFile('appendices.md'));
+  const appendicesMd = fs.readFileSync(path.join(DRAFT, 'appendices.md'), 'utf8');
+  const appendicesChildren = renderBlocks(parseMarkdown(appendicesMd), tracker);
+  const hasPublicationDetails = /^#{1,3}\s+publication\s+details\b/im.test(appendicesMd);
+
+  const bodyChildren = [];
+
+  bodyChildren.push(heading1Paragraph('ABSTRACT'));
+  for (const block of abstract) {
+    bodyChildren.push(new Paragraph({ children: inlineRuns(block.text) }));
+  }
+
+  bodyChildren.push(
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      pageBreakBefore: true,
+      spacing: { before: 240, after: 240 },
+      children: [new TextRun({ text: 'TABLE OF CONTENTS', font: BODY_FONT, size: 32, bold: true })],
+    }),
+    new TableOfContents('Table of Contents', {
+      hyperlink: true,
+      headingStyleRange: '1-3',
+    })
+  );
+
+  bodyChildren.push(heading1Paragraph('LIST OF TABLES'));
+  bodyChildren.push(captionListTable(tracker.tables, 'Table No.'));
+
+  bodyChildren.push(heading1Paragraph('LIST OF FIGURES'));
+  bodyChildren.push(captionListTable(tracker.figures, 'Fig. No.'));
+
+  bodyChildren.push(heading1Paragraph('LIST OF ABBREVIATIONS'));
+  if (abbreviationTable) {
+    bodyChildren.push(...tableBlock({ ...abbreviationTable, caption: abbreviationTable.caption || 'Table A1.1 Abbreviations used in the report' }));
+  }
+
+  bodyChildren.push(...chapterChildren);
+  bodyChildren.push(...referencesChildren);
+  bodyChildren.push(...appendicesChildren);
+  if (!hasPublicationDetails) {
+    bodyChildren.push(...publicationDetailsSection());
+  }
+
+  const pageConfig = {
+    size: { width: PAGE_WIDTH, height: PAGE_HEIGHT },
+    margin: { top: MARGIN, right: MARGIN, bottom: MARGIN, left: MARGIN },
+  };
 
   const doc = new Document({
     creator: 'SecureShare project team',
     title: 'Secure File Sharing System Using End-to-End Encryption and Access Control',
     description: 'Project report for 21ECC402P, Computer Communication and Network Security',
+    features: { updateFields: true },
+    pageNumbers: layout ? layout.estimatePageNumbersWith({ guess: true }) : undefined,
     styles,
     numbering,
     sections: [
       {
+        properties: { page: pageConfig },
+        children: titlePage(),
+      },
+      {
         properties: {
-          page: { margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } },
+          type: SectionType.NEXT_PAGE,
+          page: {
+            ...pageConfig,
+            pageNumbers: { start: 1 },
+          },
         },
-        footers: {
-          default: new Footer({
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [
-                  new TextRun({ text: 'Page ', font: BODY_FONT, size: 20 }),
-                  new TextRun({ children: [PageNumber.CURRENT], font: BODY_FONT, size: 20 }),
-                ],
-              }),
-            ],
-          }),
-        },
-        children,
+        headers: { default: runningHeader() },
+        footers: { default: pageFooter() },
+        children: bodyChildren,
       },
     ],
   });

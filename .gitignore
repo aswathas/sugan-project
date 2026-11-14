@@ -1,3 +1,5 @@
 node_modules/
 data/
 *.log
+report/pg*.png
+report/slide-*.png

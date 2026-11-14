@@ -3,7 +3,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { load, save, writeBlob, readBlob } = require('./store');
+const { load, save, writeBlob, readBlob, removeBlob } = require('./store');
 const { hashPassword, verifyPassword, newToken } = require('./crypto');
 const { deliverOtp } = require('./mailer');
 const { verifyGoogleIdToken } = require('./google');
@@ -140,12 +140,13 @@ function verifyTrail() {
 // A share is dead when the sender revoked it or when its time ran out. The
 // metadata stays visible so the card can say so; only the bytes are refused.
 function shareState(share, now = Date.now()) {
+  if (share.deletedAt) return 'trashed';
   if (share.revokedAt) return 'revoked';
   if (share.expiresAt && share.expiresAt <= now) return 'expired';
   return 'live';
 }
 
-function shareView(share) {
+function shareView(share, username) {
   return {
     id: share.id,
     from: share.from,
@@ -157,7 +158,10 @@ function shareView(share) {
     expiresAt: share.expiresAt || null,
     revokedAt: share.revokedAt || null,
     openedAt: share.openedAt || null,
+    deletedAt: share.deletedAt || null,
+    deletedBy: share.deletedBy || null,
     digest: share.digest || null,
+    starred: Boolean(username && (share.starredBy || []).includes(username)),
     state: shareState(share),
   };
 }
@@ -418,9 +422,12 @@ async function handleApi(req, res, url) {
     const username = requireUser(req, res);
     if (!username) return;
     const all = Object.values(db.shares).sort((a, b) => b.createdAt - a.createdAt);
+    const view = (s) => shareView(s, username);
     return json(res, 200, {
-      inbox: all.filter((s) => s.to === username).map(shareView),
-      sent: all.filter((s) => s.from === username).map(shareView),
+      inbox: all.filter((s) => s.to === username && !s.deletedAt).map(view),
+      sent: all.filter((s) => s.from === username && !s.deletedAt).map(view),
+      starred: all.filter((s) => (s.starredBy || []).includes(username) && !s.deletedAt).map(view),
+      trashed: all.filter((s) => s.deletedAt).map(view),
     });
   }
 
@@ -439,6 +446,73 @@ async function handleApi(req, res, url) {
     const username = requireUser(req, res);
     if (!username) return;
     return json(res, 200, verifyTrail());
+  }
+
+  const starMatch = url.pathname.match(/^\/api\/shares\/([^/]+)\/star$/);
+  if (req.method === 'POST' && starMatch) {
+    const username = requireUser(req, res);
+    if (!username) return;
+    const share = db.shares[starMatch[1]];
+    if (!share) return json(res, 404, { error: 'not found' });
+    if (share.from !== username && share.to !== username) {
+      return json(res, 403, { error: 'not your share' });
+    }
+    share.starredBy = share.starredBy || [];
+    const at = share.starredBy.indexOf(username);
+    if (at >= 0) share.starredBy.splice(at, 1);
+    else share.starredBy.push(username);
+    save(db);
+    return json(res, 200, { id: share.id, starred: at < 0 });
+  }
+
+  const deleteMatch = url.pathname.match(/^\/api\/shares\/([^/]+)\/delete$/);
+  if (req.method === 'POST' && deleteMatch) {
+    const username = requireUser(req, res);
+    if (!username) return;
+    const share = db.shares[deleteMatch[1]];
+    if (!share) return json(res, 404, { error: 'not found' });
+    if (share.from !== username && share.to !== username) {
+      return json(res, 403, { error: 'not your share' });
+    }
+    if (!share.deletedAt) {
+      share.deletedAt = Date.now();
+      share.deletedBy = username;
+      logEvent('deleted', username, share, null);
+      save(db);
+    }
+    return json(res, 200, { id: share.id, deletedAt: share.deletedAt });
+  }
+
+  const restoreMatch = url.pathname.match(/^\/api\/shares\/([^/]+)\/restore$/);
+  if (req.method === 'POST' && restoreMatch) {
+    const username = requireUser(req, res);
+    if (!username) return;
+    const share = db.shares[restoreMatch[1]];
+    if (!share) return json(res, 404, { error: 'not found' });
+    if (share.from !== username && share.to !== username) {
+      return json(res, 403, { error: 'not your share' });
+    }
+    if (!share.deletedAt) return json(res, 409, { error: 'this share is not in the trash' });
+    share.deletedAt = null;
+    share.deletedBy = null;
+    logEvent('restored', username, share, null);
+    save(db);
+    return json(res, 200, { id: share.id });
+  }
+
+  const purgeMatch = url.pathname.match(/^\/api\/shares\/([^/]+)\/purge$/);
+  if (req.method === 'POST' && purgeMatch) {
+    const username = requireUser(req, res);
+    if (!username) return;
+    const share = db.shares[purgeMatch[1]];
+    if (!share) return json(res, 404, { error: 'not found' });
+    if (share.from !== username) return json(res, 403, { error: 'only the sender can purge a share' });
+    if (!share.deletedAt) return json(res, 409, { error: 'move it to the trash first' });
+    delete db.shares[share.id];
+    removeBlob(share.id);
+    logEvent('purged', username, share, null);
+    save(db);
+    return json(res, 200, { id: share.id });
   }
 
   const revokeMatch = url.pathname.match(/^\/api\/shares\/([^/]+)\/revoke$/);
