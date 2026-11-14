@@ -18,7 +18,7 @@ services:
       # from the name above. Google refuses an origin it was not given, so this
       # list and the client's "Authorized JavaScript origins" must agree.
       - key: GOOGLE_ORIGINS
-        value: http://localhost:3000,http://127.0.0.1:3000,https://secureshare.onrender.com
+        value: http://localhost:3000,http://127.0.0.1:3000,https://secureshare-2r3j.onrender.com
       # Set these in the Render dashboard, not here.
       # GOOGLE_CLIENT_ID: the client id from Google Cloud, which makes the
       #   "Continue with Google" button live.
