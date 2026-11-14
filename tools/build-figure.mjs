@@ -105,12 +105,12 @@ function bench() {
 
   for (const [x, y] of byDepth(k.corners(PLATE, 14))) {
     out.push(S(k.cylinder(x, y, LEG / 2 + 2.4, LEG_BOTTOM, 3, P, 24), { tone: "lo" }));
-    out.push(S(k.slabOf({ x: x - LEG / 2, y: y - LEG / 2, w: LEG, d: LEG, r: 1 }, LEG_BOTTOM + 3, LEG_TOP - LEG_BOTTOM - 3, P, 1.4, 0.5), { tone: "mid" }));
+    out.push(S(k.slabOf({ x: x - LEG / 2, y: y - LEG / 2, w: LEG, d: LEG, r: 1 }, LEG_BOTTOM + 3, LEG_TOP - LEG_BOTTOM - 3, P, 1.4, 0.5), { tone: "lo" }));
     out.push(S(k.slabOf({ x: x - LEG / 2 - 1.6, y: y - LEG / 2 - 1.6, w: LEG + 3.2, d: LEG + 3.2, r: 1.4 }, LEG_TOP - 5, 5, P, 1.2, 0.5), { tone: "lo" }));
     out.push(D([at([x, y, LEG_BOTTOM + 1.2])], { size: 0.5, tone: "lo" }));
   }
 
-  out.push(S(k.slabOf(PLATE, -PLATE_H, PLATE_H, P, 8, 1.6), { tone: "mid" }));
+  out.push(S(k.slabOf(PLATE, -PLATE_H, PLATE_H, P, 8, 1.6), { tone: "lo" }));
   out.push(L(k.planOutline(k.insetPlan(PLATE, 5), 0, P), { tone: "lo" }));
 
   const screws = k.corners(PLATE, 9);
@@ -119,7 +119,7 @@ function bench() {
 
   // the label plate, with three rule lines
   const label = { x: -96, y: 8, w: 44, d: 13, r: 1.5 };
-  out.push(S(k.slabOf(label, 0, 1.2, P, 2.5, 0.4), { tone: "mid" }));
+  out.push(S(k.slabOf(label, 0, 1.2, P, 2.5, 0.4), { tone: "lo" }));
   out.push(L(k.planOutline(k.insetPlan(label, 2), 1.2, P), { tone: "faint" }));
   for (let i = 0; i < 3; i++) {
     out.push(L(k.lineOnTop([label.x + 5, label.y + 3 + i * 3.4], [label.x + label.w - 6 - i * 7, label.y + 3 + i * 3.4], 1.2, P), { tone: "faint" }));
@@ -323,6 +323,8 @@ const SHEET_TOP = ${CARRIAGE_TOP + 0.8};
 const RAIL_TO = ${RAIL_TO};
 const HOPPER_FLOOR = ${HOPPER_FLOOR};
 const DIAL = ${JSON.stringify(DIAL)};
+const DIAL_R = ${DIAL_R};
+const DIAL_H = ${DIAL_H};
 const DIAL_TOP = ${DIAL_H + 1.6};
 const CAPSULE_H = ${CAPSULE_H};
 const stage = document.querySelector(".iso-stage");
@@ -397,17 +399,21 @@ function draw() {
     }
   });
 
-  // the store: one more capsule for every cycle
-  const count = Math.floor(t / CYCLE);
+  // the store: one more capsule for every cycle, and the one on the rail is
+  // on its way in
+  const count = Math.floor(t / CYCLE) + (t >= T.away[0] ? 1 : 0);
   if (count !== previous) {
     previous = count;
-    const pile = backSvg.querySelector("[data-part=\"pile\"]");
-    if (pile) pile.setAttribute("data-count", String(count % 4));
+    backSvg.querySelectorAll('[data-part="stored"]').forEach((group) => {
+      group.setAttribute("opacity", Number(group.getAttribute("data-index")) < count ? "1" : "0");
+    });
   }
 
-  const text = sealed
-    ? "the store holds " + sealed + " sealed capsule" + (sealed === 1 ? "" : "s") + " · no sheets"
-    : "one sheet on the carriage";
+  const stage = t < T.press[0] ? "the sheet is on its way"
+    : t < T.lift[0] ? "the die is sealing it"
+    : t < T.away[0] ? "the capsule is sealed"
+    : "the capsule is going to the store";
+  const text = stage + " · the store holds " + count + " capsule" + (count === 1 ? "" : "s");
   if (readout.textContent !== text) readout.textContent = text;
 }
 
@@ -420,9 +426,24 @@ function tick(now) {
 }
 
 const run = () => { if (!frame && visible) { last = 0; frame = requestAnimationFrame(tick); } };
-new IntersectionObserver((entries) => { visible = entries[entries.length - 1].isIntersecting; if (visible) run(); }, { rootMargin: "120px 0px" }).observe(stage);
+// Whether the figure is on the screen is measured from its own rectangle
+// rather than by an observer. Inside a frame that was loaded lazily the
+// observer can report the figure as out of view before the frame has its
+// size, and then never speak again, which leaves the press standing still.
+const inView = () => {
+  const box = stage.getBoundingClientRect();
+  return box.bottom > -100 && box.top < window.innerHeight + 100;
+};
+setInterval(() => {
+  const now = inView();
+  if (now === visible) return;
+  visible = now;
+  if (visible) run();
+  else frame = 0;
+}, 500);
 if (still.matches) { clock = 0; }
 draw();
+run();
 `;
 
 /* ---------------- the page ---------------- */
@@ -462,14 +483,19 @@ const body = k.plateHtml({
   body: `<div class="iso-stage seal-stage" tabindex="0" role="img" aria-label="${LABEL}">${backSvg}<canvas class="seal-glow" aria-hidden="true"></canvas>${frontSvg}</div>`,
 });
 
-const page = k.pageHtml({
-  title: "The sealing press",
-  theme: "light",
-  body: `<style>${CSS}</style>${body}`,
-  script: kitScript() + live,
-  width: WIDTH + 40,
-});
+// The live script goes in its own file, not inline in the page. The site's
+// content security policy allows a script from our own site and nothing else,
+// so an inline script would be refused and the figure would stand still.
+const page = k
+  .pageHtml({
+    title: "The sealing press",
+    theme: "light",
+    body: `<style>${CSS}</style>${body}`,
+    width: WIDTH + 40,
+  })
+  .replace("</body>", '<script type="module" src="figure.js"></script></body>');
 
 mkdirSync(OUT_DIR, { recursive: true });
+writeFileSync(join(OUT_DIR, "figure.js"), kitScript() + live);
 writeFileSync(join(OUT_DIR, "sealing-press.html"), page);
 console.log("wrote", join(OUT_DIR, "sealing-press.html"));

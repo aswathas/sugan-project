@@ -259,7 +259,7 @@ function table(slide, rows, x, y, w, colWidths, fontSize) {
   slide.addImage({ path: path.join(SHOTS, '04-inbox.png'), x: 8.75, y: 1.85, w: 3.85, h: 2.71 });
   caption(slide, 'The recipient’s dashboard: a share that has not been opened yet carries the live mark.', 8.75, 4.62, 3.85);
   slide.addShape(pptx.ShapeType.rect, { x: 8.75, y: 5.25, w: 3.85, h: 1.35, fill: { color: INK } });
-  slide.addText('Verified in two layers: 18 checks in the Node suite and 9 checks in a headless Chrome test that drives the real interface in two separate browser profiles.', {
+  slide.addText('Verified in two layers: 22 checks in the Node suite and 27 checks in a headless Chrome test that drives the real interface in two separate browser profiles.', {
     x: 8.95, y: 5.42, w: 3.45, h: 1.05,
     fontFace: FONT, fontSize: 11, color: PAPER, margin: 0, lineSpacingMultiple: 1.15,
   });

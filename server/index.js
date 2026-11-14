@@ -146,11 +146,17 @@ function logEvent(type, actor, share, detail) {
     with: share ? (share.from === actor ? share.to : share.from) : null,
     detail: detail || null,
   });
-  if (db.activity.length > 500) db.activity = db.activity.slice(-500);
+  if (db.activity.length > 500) {
+    // Cutting the oldest entries must not break the chain: the hash of the
+    // last entry that goes becomes the anchor the chain is checked from.
+    const dropped = db.activity.length - 500;
+    db.trailAnchor = db.activity[dropped - 1].hash;
+    db.activity = db.activity.slice(-500);
+  }
 }
 
 function verifyTrail() {
-  return trail.verify(db.activity || []);
+  return trail.verify(db.activity || [], db.trailAnchor || trail.GENESIS);
 }
 
 // A share is dead when the sender revoked it or when its time ran out. The
@@ -468,6 +474,16 @@ async function handleApi(req, res, url) {
   }
 
   if (route === 'POST /api/logout') {
+    // An account with a second factor proves it again before the session ends,
+    // so that a borrowed machine cannot be signed out of.
+    const username = currentUser(req);
+    const user = username ? db.users[username] : null;
+    if (user && user.totpSecret) {
+      const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+      if (!totp.verify(user.totpSecret, body.code)) {
+        return json(res, 401, { error: 'that code is not right' });
+      }
+    }
     const token = parseCookies(req).sid;
     if (token) {
       delete db.sessions[token];
@@ -480,6 +496,13 @@ async function handleApi(req, res, url) {
   if (route === 'POST /api/logout-all') {
     const username = requireUser(req, res);
     if (!username) return;
+    const account = db.users[username];
+    if (account && account.totpSecret) {
+      const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+      if (!totp.verify(account.totpSecret, body.code)) {
+        return json(res, 401, { error: 'that code is not right' });
+      }
+    }
     let ended = 0;
     for (const [token, session] of Object.entries(db.sessions)) {
       if (session.username === username) {
@@ -564,7 +587,10 @@ async function handleApi(req, res, url) {
     if (typeof iv !== 'string' || typeof wrappedKey !== 'string' || typeof ciphertext !== 'string') {
       return json(res, 400, { error: 'iv, wrappedKey and ciphertext are required' });
     }
-    if (body.digest != null && !/^[0-9a-f]{64}$/.test(String(body.digest))) {
+    // The fingerprint is required. Without it there is nothing for the
+    // recipient to recompute, and the client would show a file as verified
+    // that was never checked.
+    if (!/^[0-9a-f]{64}$/.test(String(body.digest || ''))) {
       return json(res, 400, { error: 'digest must be a sha-256 hex string' });
     }
     if (body.signature != null && typeof body.signature !== 'string') {
@@ -762,27 +788,6 @@ async function handleApi(req, res, url) {
       return json(res, 403, { error: 'not your share' });
     }
     return json(res, 200, { ...shareView(share), iv: share.iv, wrappedKey: share.wrappedKey });
-  }
-
-  const headMatch = url.pathname.match(/^\/api\/shares\/([^/]+)\/cipher-head$/);
-  if (req.method === 'GET' && headMatch) {
-    const username = requireUser(req, res);
-    if (!username) return;
-    const share = db.shares[headMatch[1]];
-    if (!share) return json(res, 404, { error: 'not found' });
-    if (share.from !== username && share.to !== username) {
-      return json(res, 403, { error: 'not your share' });
-    }
-    const blob = readBlob(share.id);
-    if (!blob) return json(res, 404, { error: 'blob missing' });
-    const head = blob.subarray(0, 32);
-    return json(res, 200, {
-      size: blob.length,
-      head: head.toString('hex'),
-      // The same bytes as text, with anything unprintable shown as a dot, so the
-      // professor can see that the stored file is not readable.
-      readable: head.toString('utf8').replace(/[^\x20-\x7e]/g, '.'),
-    });
   }
 
   const blobMatch = url.pathname.match(/^\/api\/shares\/([^/]+)\/blob$/);

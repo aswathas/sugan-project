@@ -194,6 +194,7 @@ async function verify(username, code) {
       filename: 'draft.pdf',
       size: 5,
       permission: 'view',
+      digest,
       iv: b64(iv),
       wrappedKey: b64(wrappedKey),
       ciphertext: b64(ciphertext),
@@ -232,6 +233,7 @@ async function verify(username, code) {
       size: 5,
       permission: 'view',
       expiresIn: 1,
+      digest,
       iv: b64(iv),
       wrappedKey: b64(wrappedKey),
       ciphertext: b64(ciphertext),
@@ -252,6 +254,7 @@ async function verify(username, code) {
       filename: 'secret.pdf',
       size: 5,
       permission: 'view',
+      digest,
       iv: b64(iv),
       wrappedKey: b64(wrappedKey),
       ciphertext: b64(ciphertext),
@@ -469,6 +472,44 @@ async function verify(username, code) {
   console.log('PASS  starring is per user, and delete, restore and purge behave');
   console.log("PASS  the headers and the favicon leave the Google button working");
   console.log('PASS  the second factor holds the sign-in until the code is given');
+
+  // Cutting the old entries must not make the chain look tampered with.
+  const trailModule = require('../server/trail.js');
+  const longChain = [];
+  for (let i = 0; i < 520; i++) {
+    trailModule.append(longChain, { ts: Date.now(), type: 'sent', actor: 'alice', shareId: 's' + i, filename: 'f', with: 'bob' });
+    if (longChain.length > 500) {
+      const dropped = longChain.length - 500;
+      const anchor = longChain[dropped - 1].hash;
+      longChain.splice(0, dropped);
+      assert.ok(trailModule.verify(longChain, anchor).intact, 'the chain must survive the cut');
+    }
+  }
+  assert.strictEqual(longChain.length, 500, 'the trail must be cut to its limit');
+
+  // A share with no fingerprint is refused: without one the recipient would
+  // be shown a file as verified that was never checked.
+  const freshLogin = await call('/api/login', {
+    method: 'POST',
+    body: { username: 'alice', password: 'correct-horse' },
+  });
+  const aliceAgain = freshLogin.headers.get('set-cookie').split(';')[0];
+  const noDigest = await call('/api/shares', {
+    method: 'POST',
+    cookie: aliceAgain,
+    body: {
+      recipient: 'bob',
+      filename: 'no-digest.bin',
+      size: 4,
+      permission: 'view',
+      iv: 'AAAAAAAAAAAAAAAA',
+      wrappedKey: 'AAAA',
+      ciphertext: 'AAAA',
+    },
+  });
+  assert.strictEqual(noDigest.status, 400, 'a share without a fingerprint must be refused');
+
+  console.log('PASS  the trail survives the cut, and a share without a fingerprint is refused');
 
   server.close();
   fs.rmSync(DATA_DIR, { recursive: true, force: true });

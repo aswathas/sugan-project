@@ -55,13 +55,13 @@ let users = [];
 let pendingUser = null;
 let permission = 'view';
 let expiry = 0;
-let lastEvidence = null;
 let view = 'inbox';
 let query = '';
 let filterBy = 'all';
 let sortBy = 'newest';
 let layout = readStored(LAYOUT_KEY) === 'list' ? 'list' : 'grid';
 let shares = { inbox: [], sent: [], starred: [], trashed: [] };
+let totpEnabled = false;
 let visibleFiles = [];
 let activeCardId = null;
 let draggedShareId = null;
@@ -243,11 +243,39 @@ async function completeSignIn(username) {
   myKeys = (await idbGet(me)) || null;
   await recoverKeyIfAsked(username);
   showApp();
+  totpEnabled = (await api('/api/totp')).enabled;
   await refresh();
   await uploadBackup();
   if (!myKeys) {
     setMainStatus(
       'No key pair on this device for this account, so files sent to you cannot be decrypted here.',
+      'error'
+    );
+  }
+}
+
+// A reload should not cost a sign-in. The session cookie lasts a week, so the
+// page asks the server who it is and goes straight back to the workspace.
+async function restoreSession() {
+  let session;
+  try {
+    session = await api('/api/me');
+  } catch {
+    return; // no session: the sign in page stays
+  }
+  me = session.username;
+  myKeys = (await idbGet(me)) || null;
+  showApp();
+  try {
+    totpEnabled = (await api('/api/totp')).enabled;
+  } catch {
+    totpEnabled = false;
+  }
+  await refresh();
+  if (!myKeys) {
+    $('recovery-field').classList.remove('hidden');
+    setMainStatus(
+      'This device holds no key pair for this account, so files sent to you cannot be decrypted here. Enter your recovery phrase to restore it.',
       'error'
     );
   }
@@ -260,6 +288,15 @@ async function completeSignIn(username) {
 function isTotpOpen() {
   const panel = $('totp-panel');
   return Boolean(panel && !panel.classList.contains('hidden'));
+}
+
+// The address an authenticator app reads, drawn as a code the phone's camera
+// can scan. The encoder is vendored, so nothing is fetched from a third party.
+function qrFor(uri) {
+  const qr = qrcode(0, 'M');
+  qr.addData(uri);
+  qr.make();
+  return qr.createSvgTag(4, 8, 'QR code for the authenticator app');
 }
 
 async function openTotpPanel() {
@@ -282,6 +319,7 @@ async function openTotpPanel() {
       const setup = await api('/api/totp/enroll', { method: 'POST' });
       $('totp-secret').textContent = setup.secret;
       $('totp-uri').textContent = setup.uri;
+      $('totp-qr').innerHTML = qrFor(setup.uri);
     }
     $('totp-close').focus();
   } catch (err) {
@@ -298,6 +336,7 @@ function closeTotpPanel() {
 async function confirmTotp() {
   try {
     await api('/api/totp/confirm', { method: 'POST', body: { code: $('totp-code').value.trim() } });
+    totpEnabled = true;
     toast('The second factor is on. The next sign-in asks for a code.');
     closeTotpPanel();
   } catch (err) {
@@ -308,6 +347,7 @@ async function confirmTotp() {
 async function disableTotp() {
   try {
     await api('/api/totp/disable', { method: 'POST', body: { code: $('totp-code').value.trim() } });
+    totpEnabled = false;
     toast('The second factor is off.');
     closeTotpPanel();
   } catch (err) {
@@ -1795,22 +1835,6 @@ function expiryText(seconds) {
   return `${seconds} seconds`;
 }
 
-/* ---------------- evidence: what the server really stored ---------------- */
-
-async function showEvidence(shareId, filename, originalHead) {
-  try {
-    const head = await api(`/api/shares/${shareId}/cipher-head`);
-    $('evidence-original').textContent = originalHead || 'not kept by the browser';
-    $('evidence-stored').textContent = head.head.slice(0, 32);
-    $('evidence-foot').textContent =
-      `The server holds ${formatSize(head.size)} for ${filename}. The same bytes on disk are in data/blobs/${shareId}.bin and start ${head.readable}. ` +
-      'Open that file in any hex viewer, or run the show:ciphertext script, to see it for yourself.';
-    lastEvidence = { shareId, filename };
-  } catch (err) {
-    $('evidence-foot').textContent = err.message;
-  }
-}
-
 /* ---------------- opening a file ---------------- */
 
 function openedShares() {
@@ -1983,7 +2007,6 @@ async function showSent(id) {
         (meta.openedAt ? ' The recipient opened it.' : ' The recipient has not opened it yet.'),
       'ok'
     );
-    await showEvidence(meta.id, meta.filename, null);
   } catch (err) {
     setMainStatus(err.message, 'error');
   }
@@ -2150,20 +2173,54 @@ function bindEvents() {
     });
   }
 
-  $('logout').addEventListener('click', async () => {
-    await api('/api/logout', { method: 'POST' });
-    location.reload();
-  });
-
-  $('logout-all').addEventListener('click', async () => {
-    try {
-      const result = await api('/api/logout-all', { method: 'POST' });
+  // Signing out asks for the authenticator code when the account has a second
+  // factor, so that a machine someone else is sitting at cannot be signed out.
+  let signOutEverywhere = false;
+  const endSession = async (code) => {
+    const result = await api(signOutEverywhere ? '/api/logout-all' : '/api/logout', {
+      method: 'POST',
+      body: code ? { code } : {},
+    });
+    if (signOutEverywhere) {
       setMainStatus(`Signed out of ${result.ended} session(s) on every device.`, 'ok');
       setTimeout(() => location.reload(), 1200);
+    } else {
+      location.reload();
+    }
+  };
+
+  const askToSignOut = async (everywhere) => {
+    signOutEverywhere = everywhere;
+    if (!totpEnabled) {
+      try {
+        await endSession(null);
+      } catch (err) {
+        setMainStatus(err.message, 'error');
+      }
+      return;
+    }
+    $('signout-code').value = '';
+    $('signout-panel').classList.remove('hidden');
+    $('signout-code').focus();
+  };
+
+  $('signout-cancel').addEventListener('click', () => {
+    $('signout-panel').classList.add('hidden');
+  });
+  $('signout-panel').addEventListener('click', (event) => {
+    if (event.target === $('signout-panel')) $('signout-panel').classList.add('hidden');
+  });
+  $('signout-confirm').addEventListener('click', async () => {
+    try {
+      $('signout-panel').classList.add('hidden');
+      await endSession($('signout-code').value.trim());
     } catch (err) {
       setMainStatus(err.message, 'error');
     }
   });
+
+  $('logout').addEventListener('click', () => askToSignOut(false));
+  $('logout-all').addEventListener('click', () => askToSignOut(true));
 
   for (const cell of document.querySelectorAll('[data-permission]')) {
     cell.addEventListener('click', () => {
@@ -2333,9 +2390,6 @@ function bindEvents() {
     try {
       progress(5, 'Reading the file');
       const plain = await file.arrayBuffer();
-      const originalBytes = new Uint8Array(plain.slice(0, 16));
-      const originalHead = [...originalBytes].map((byte) => byte.toString(16).padStart(2, '0')).join(' ');
-
       progress(25, 'Hashing the file');
       const digest = await sha256Hex(plain);
 
@@ -2421,7 +2475,6 @@ function bindEvents() {
       describeFile(null);
       toast('Encrypted and sent.');
       await refresh();
-      await showEvidence(share.id, file.name, originalHead);
       setFilter('all');
       view = 'sent';
       render();
@@ -2563,6 +2616,7 @@ function bindEvents() {
   });
 
   initGoogleSignIn();
+  restoreSession();
 }
 
 if (document.readyState === 'loading') {

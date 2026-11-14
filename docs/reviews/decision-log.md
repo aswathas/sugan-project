@@ -98,3 +98,36 @@
 | 2026-11-14 | The recovery phrase is shown when it is made, when the backup fails, and when it is asked for, and never on an ordinary sign in | The phrase panel opened over the workspace every time, which is the interruption the user reported; a phrase a person must scroll past is a phrase nobody keeps | user: "first remove that popup page opening when clicking sign in" |
 | 2026-11-14 | The registration form asks for the password twice, and the server checks the pair as well | A typo must not lock a person out of their own account, and the check cannot live only in the browser | user: "also ask a confirm password in register page" |
 | 2026-11-14 | The figure is a Figure, not a Hero | One mechanism of about seventy parts suits a sign in page; a Hero with several shader layers is two to four hours of work for no gain here | design |
+
+## D9 - The evidence panel is gone; the real files are the terminal
+
+- Prompt: "What the server actually stored ... i dont want this compoenent rather open the server backend and show the real files, so tell me how to open the backedn render or wherever th files got stored".
+- Decision: the panel that showed the first sixteen bytes of the file next to the first sixteen bytes on the server was removed from the page, and the way to see the real files is the folder the server writes to, `data/blobs/<id>.bin`, or `npm run show:ciphertext`, which prints the hex of every stored blob.
+- Alternatives considered: (a) keep the panel and explain it, which is what was there; (b) hide it behind a link, which leaves the code and the endpoint in place; (c) delete the panel, its script, its styles and the endpoint that only it used, and point at the disk instead.
+- How: the panel was a screenshot of the proof, not the proof. `data/blobs` is the proof and can be opened in any hex viewer. The endpoint `/api/shares/:id/cipher-head` had no other caller and went with it.
+- Evidence: `npm run show:ciphertext` prints the stored bytes of every share beside the name of the file the sender uploaded; the browser suite runs without the panel and the check that read it was rewritten to count the share instead.
+- Consequence: the app is shorter and the demonstration is a terminal, not a screenshot of it.
+
+## D10 - The sign-in page keeps only the sign-in
+
+- Prompt: "the login page is cluttered i want old login page flow but anatomy component should come after the login sign hero section use /ponytail and think replace things".
+- Decision: the page is hero and form, then the sealing press, then one line that opens the explanation. The workspace shot, the three moments, the code sample and the questions fold into a single disclosure.
+- Alternatives considered: (a) delete the explanation, which would lose the code sample the report and the test both rely on; (b) move it to a page of its own, which is more code for the same result; (c) fold it into one disclosure, which keeps every word and one click away.
+- Evidence: the page is 2,326 pixels tall now and was 5,746. The browser suite still reads the three moments, the code sample and the questions from the page, because they are in the document.
+- Consequence: a visitor sees the claim, the form and the machine; the proof is one line down.
+
+## D11 - The session survives a reload, and signing out asks for the code
+
+- Prompts: "our login should be stored in browser cookes or for sometime becuase i cant login every single time after realoading"; "everytime we login / logout it should ask"; "also we need a qr scanner to connect authenicator".
+- Decision: three changes. The page asks the server who it is on load and returns to the workspace when the cookie is still good. Signing out asks for the authenticator code when the account has a factor. The authenticator setup shows a QR code the phone camera reads.
+- Alternatives considered: (a) store the session in local storage, which is readable by any script on the page and buys nothing, because the server session and its HttpOnly cookie already last seven days; (b) ask for the code only at sign-in, which leaves a borrowed machine able to end the session; (c) write the QR encoder by hand, when a small MIT encoder does the job.
+- How: `restoreSession()` calls `/api/me` and rebuilds the signed-in state from the cookie and the key in IndexedDB. `POST /api/logout` and `/api/logout-all` verify the code when the account has a secret. The QR is drawn by `qrcode-generator`, vendored under `public/vendor`, so no third party is contacted and the policy needs no change.
+- Evidence: the browser suite has three new checks: the setup shows a scannable code, a wrong code does not end the session, and a reload keeps the session.
+- Consequence: a reload is free, a borrowed machine cannot sign you out, and the phone is enrolled by pointing a camera at the screen.
+
+## D12 - The audit must fix findings, and the figure must move
+
+- Prompts: "/ponytail:ponytail-audit" and the request for the anatomy figure on the sign-in page.
+- Decision: the three must-fix findings from the audit were fixed: the audit trail keeps an anchor when the log is trimmed, a share without a fingerprint is refused, and the database write is atomic. The figure measures its own rectangle instead of trusting an observer, because an observer inside a lazily loaded frame reported it as out of view and the press stood still.
+- Evidence: the server suite gained the trail and fingerprint checks; the browser suite watches the head of the press and the readout across a whole cycle and requires at least two states.
+- Consequence: the chain survives the cut, the store refuses an unsigned share, and the machine on the sign-in page works.

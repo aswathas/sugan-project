@@ -34,9 +34,12 @@ function append(trail, event) {
   return entry;
 }
 
-// Walks the chain and reports the first entry that no longer fits.
-function verify(trail) {
-  let previousHash = GENESIS;
+// Walks the chain and reports the first entry that no longer fits. The anchor
+// is the hash the first entry hangs from: "genesis" for a chain that has never
+// been cut, and the hash of the last entry that was cut when old entries are
+// dropped.
+function verify(trail, anchor = GENESIS) {
+  let previousHash = anchor;
   for (let i = 0; i < trail.length; i++) {
     const event = trail[i];
     if (event.prev !== previousHash || event.hash !== hashEvent(event, previousHash)) {

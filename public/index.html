@@ -7,6 +7,7 @@
 <title>SecureShare</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
+<script src="vendor/qrcode.js"></script>
 <script src="keyguard.js"></script>
 <script src="app.js"></script>
 </head>
@@ -146,6 +147,30 @@
       </div>
     </div>
 
+    <section class="auth__section" aria-labelledby="figure-heading">
+      <div class="auth__section-head">
+        <span class="tab">The machine</span>
+        <h2 id="figure-heading">How a file is sealed</h2>
+        <p class="auth__claim">
+          The drawing below is the product as a machine. The carriage brings the file to the press,
+          the key is turned on the dial, the head comes down and presses the file into a sealed
+          capsule, and the capsule slides into the hopper. The hopper is the server: it only ever
+          holds capsules. The file itself was consumed by the seal.
+        </p>
+      </div>
+      <div class="figure-frame">
+        <iframe
+          src="figure/sealing-press.html"
+          title="An isometric drawing of the sealing press: the file goes in on the carriage, the die seals it into a capsule, and the capsule drops into the hopper that stands for the server"
+          loading="lazy"
+        ></iframe>
+      </div>
+    </section>
+    <details class="auth__more">
+      <summary class="auth__more-summary">
+        <span class="tab">How it works</span>
+        <h2>The three moments, the code, and the questions people ask</h2>
+      </summary>
     <section class="auth__section" aria-labelledby="work-heading">
       <div class="auth__section-head">
         <span class="tab">The workspace</span>
@@ -277,6 +302,7 @@ const passwordWrappedKey = (await KeyGuard.wrapWithPassword(aes, password)).wrap
         </details>
       </div>
     </section>
+    </details>
 
     <section class="auth__close" aria-labelledby="close-heading">
       <div class="auth__close-copy">
@@ -286,25 +312,6 @@ const passwordWrappedKey = (await KeyGuard.wrapWithPassword(aes, password)).wrap
       <button id="close-register" class="btn btn--primary" type="button">Create an account</button>
     </section>
 
-    <section class="auth__section" aria-labelledby="figure-heading">
-      <div class="auth__section-head">
-        <span class="tab">The machine</span>
-        <h2 id="figure-heading">How a file is sealed</h2>
-        <p class="auth__claim">
-          The drawing below is the product as a machine. The carriage brings the file to the press,
-          the key is turned on the dial, the head comes down and presses the file into a sealed
-          capsule, and the capsule slides into the hopper. The hopper is the server: it only ever
-          holds capsules. The file itself was consumed by the seal.
-        </p>
-      </div>
-      <div class="figure-frame">
-        <iframe
-          src="figure/sealing-press.html"
-          title="An isometric drawing of the sealing press: the file goes in on the carriage, the die seals it into a capsule, and the capsule drops into the hopper that stands for the server"
-          loading="lazy"
-        ></iframe>
-      </div>
-    </section>
   </section>
 
   <!-- DASHBOARD -->
@@ -473,25 +480,6 @@ const passwordWrappedKey = (await KeyGuard.wrapWithPassword(aes, password)).wrap
           </div>
         </div>
 
-        <div class="evidence">
-          <span class="tab">What the server actually stored</span>
-          <p id="evidence-note" class="note">
-            Send a file and this panel shows the first bytes of your file next to the first bytes the
-            server really holds on disk. They are never the same bytes.
-          </p>
-          <div class="compare">
-            <div class="compare__cell">
-              <span class="compare__label">Your file, first 16 bytes</span>
-              <code class="compare__value" id="evidence-original">none yet</code>
-            </div>
-            <div class="compare__cell compare__cell--ink">
-              <span class="compare__label">On the server, first 16 bytes</span>
-              <code class="compare__value compare__value--figure" id="evidence-stored">none yet</code>
-            </div>
-          </div>
-          <p class="note" id="evidence-foot"></p>
-        </div>
-
         <div class="activity">
           <span class="tab">Activity</span>
           <p class="note">Everything that happened to the files you sent and received.</p>
@@ -610,6 +598,8 @@ const passwordWrappedKey = (await KeyGuard.wrapWithPassword(aes, password)).wrap
         <p class="note">
           Open Google Authenticator or any other authenticator app, add a new account, and enter this key:
         </p>
+        <div class="qr" id="totp-qr"></div>
+        <p class="note">Scan that code with the phone’s camera, or enter this key by hand:</p>
         <p class="key-chip" id="totp-secret"></p>
         <p class="note">Or paste this address into the app:</p>
         <pre class="code-sample__pre"><code id="totp-uri"></code></pre>
@@ -622,6 +612,28 @@ const passwordWrappedKey = (await KeyGuard.wrapWithPassword(aes, password)).wrap
     <div class="preview-panel__foot">
       <button id="totp-confirm" class="btn btn--primary btn--small" type="button">Turn on</button>
       <button id="totp-disable" class="btn btn--small hidden" type="button">Turn off</button>
+    </div>
+  </div>
+</div>
+
+<div id="signout-panel" class="preview-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="signout-title">
+  <div class="preview-panel preview-panel--small">
+    <div class="preview-panel__head">
+      <div>
+        <span class="tab">Second factor</span>
+        <h3 id="signout-title" class="preview-panel__title">Confirm with your authenticator</h3>
+      </div>
+      <button id="signout-cancel" class="btn btn--small" type="button" aria-label="Close">Close</button>
+    </div>
+    <div class="preview-panel__body">
+      <p class="note">This account has a second factor. Enter the six digit code to sign out.</p>
+      <div class="field">
+        <label class="route__label" for="signout-code">Six digit code</label>
+        <input class="input" id="signout-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+      </div>
+    </div>
+    <div class="preview-panel__foot">
+      <button id="signout-confirm" class="btn btn--primary btn--small" type="button">Sign out</button>
     </div>
   </div>
 </div>

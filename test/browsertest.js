@@ -59,7 +59,13 @@ async function launchChrome(profileDir) {
   const portFile = path.join(profileDir, 'DevToolsActivePort');
   for (let i = 0; i < 100; i++) {
     if (fs.existsSync(portFile)) {
-      const port = Number(fs.readFileSync(portFile, 'utf8').split('\n')[0]);
+      // Chrome writes this file while it starts, so a read can catch it locked.
+      let port = 0;
+      try {
+        port = Number(fs.readFileSync(portFile, 'utf8').split('\n')[0]);
+      } catch {
+        port = 0;
+      }
       if (port) return { child, port };
     }
     await delay(100);
@@ -280,12 +286,37 @@ async function signUp(cdp, sessionId, username) {
         const frame = document.querySelector('.figure-frame iframe');
         const doc = frame && frame.contentDocument;
         const svg = doc && doc.querySelector('svg.seal-front');
-        return Boolean(svg && svg.querySelectorAll('path').length > 40);
+        const head = doc && doc.querySelector('[data-part="head"]');
+        return Boolean(svg && svg.querySelectorAll('path').length > 40 && head && head.getAttribute('transform'));
       })()`,
       'the figure draws'
     );
     assert.ok(drawn, 'the figure must draw its parts');
-    console.log('PASS  the sign in page carries the sealing press figure');
+    // A drawing that stands still is a picture. The press has to work.
+    const moved = await evaluate(
+      alice,
+      alicePage,
+      `(async () => {
+        const frame = document.querySelector('.figure-frame iframe');
+        const doc = frame && frame.contentDocument;
+        if (!doc) return false;
+        // The press works in bursts, so the check watches the head and the
+        // readout together over a whole turn of the cycle.
+        const signature = () => {
+          const head = doc.querySelector('[data-part="head"]');
+          const readout = doc.querySelector('[data-readout]');
+          return (head ? head.getAttribute('transform') : '') + '|' + (readout ? readout.textContent : '');
+        };
+        const seen = new Set();
+        for (let i = 0; i < 16; i++) {
+          seen.add(signature());
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        return seen.size;
+      })()`
+    );
+    assert.ok(moved >= 2, 'the figure must move, not only draw');
+    console.log('PASS  the sign in page carries the sealing press figure, and the press works');
     await evaluate(
       alice,
       alicePage,
@@ -397,24 +428,16 @@ async function signUp(cdp, sessionId, username) {
     );
     await shoot(alice, alicePage, '03-sent.png');
 
-    // The dashboard and the evidence panel: the sender sees her own file's first
-    // bytes next to the bytes the server really holds.
-    const evidence = await evaluate(
+    // The dashboard counts what was sent.
+    const counts = await evaluate(
       alice,
       alicePage,
       `(() => ({
         sent: document.getElementById('count-sent').textContent,
-        original: document.getElementById('evidence-original').textContent.trim(),
-        stored: document.getElementById('evidence-stored').textContent.trim(),
-        foot: document.getElementById('evidence-foot').textContent.trim(),
       }))()`
     );
-    assert.strictEqual(evidence.sent, '1', 'the dashboard counts the share that was sent');
-    assert.ok(evidence.original.startsWith('25 50 44 46'), 'the original file starts with the PDF signature');
-    assert.ok(/^[0-9a-f ]{32,}$/.test(evidence.stored), 'the stored bytes are shown as hex');
-    assert.ok(!evidence.original.replace(/ /g, '').startsWith(evidence.stored.replace(/ /g, '')), 'the stored bytes are not the original bytes');
-    assert.ok(evidence.foot.includes('data/blobs/'), 'the panel says where the file lives on disk');
-    console.log('PASS  the dashboard counts the share and the evidence panel shows different bytes');
+    assert.strictEqual(counts.sent, '1', 'the dashboard counts the share that was sent');
+    console.log('PASS  the dashboard counts the share that was sent');
     console.log('PASS  file encrypted in the browser and sent to bob');
 
     // The server holds ciphertext only.
@@ -909,6 +932,52 @@ async function signUp(cdp, sessionId, username) {
     );
     assert.strictEqual(factorOn, true, 'the account must ask for a code after this');
     console.log('PASS  the authenticator app turns on the second factor from the page');
+
+    // The setup shows a code the phone's camera can read.
+    const qr = await evaluate(
+      alice,
+      alicePage,
+      "document.querySelectorAll('#totp-qr svg rect, #totp-qr svg path').length"
+    );
+    assert.ok(qr > 0, 'the setup must show a scannable code');
+    console.log('PASS  the authenticator setup shows a code the phone can scan');
+
+    // Signing out asks for the code as well, because the account has a factor.
+    await evaluate(alice, alicePage, "document.getElementById('logout').click()");
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('signout-panel').classList.contains('hidden')",
+      'the sign out panel asks for the code'
+    );
+    await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        document.getElementById('signout-code').value = '000000';
+        document.getElementById('signout-confirm').click();
+        return true;
+      })()`
+    );
+    await waitFor(
+      alice,
+      alicePage,
+      "document.getElementById('main-status').textContent.includes('not right')",
+      'a wrong code does not end the session'
+    );
+    console.log('PASS  signing out asks for the authenticator code');
+
+    // A reload must not cost a sign-in: the session cookie lasts a week.
+    await alice.send('Page.navigate', { url: SITE }, alicePage);
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('app').classList.contains('hidden')",
+      'the session survives a reload'
+    );
+    const stillMe = await evaluate(alice, alicePage, "document.getElementById('who').textContent");
+    assert.ok(stillMe.length > 0, 'the workspace shows who is signed in after a reload');
+    console.log('PASS  a reload keeps the session, so there is no second sign-in');
 
     console.log('\nALL BROWSER CHECKS PASSED');
   } finally {

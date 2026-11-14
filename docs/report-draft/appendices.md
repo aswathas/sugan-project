@@ -24,9 +24,9 @@ Table A1.2 Test programs and build programs
 
 | File | What it is |
 |---|---|
-| `test/selftest.js` | The server-contract test. Starts the server on an ephemeral port against a temporary data directory and drives the whole contract: registration and the one-time code, the demo access code, the encryption path, the ciphertext on disk, the unauthorised third party, expiry, revocation, starring, the trash, the audit chain, the lockout, the sign-out, the scoping of the trash and the response headers. 16 checks. |
+| `test/selftest.js` | The server-contract test. Starts the server on an ephemeral port against a temporary data directory and drives the whole contract: registration and the one-time code, the demo access code, the encryption path, the ciphertext on disk, the unauthorised third party, expiry, revocation, starring, the trash, the audit chain, the lockout, the sign-out, the scoping of the trash and the response headers. 18 checks. |
 | `test/googletest.js` | The Google verification test. Serves its own public keys and proves the server refuses a token with the wrong audience, the wrong issuer, an expired token, a tampered token, a forged token and a malformed one. 4 checks. |
-| `test/browsertest.js` | The interface test. Launches Chrome or Edge in headless mode with two separate profiles, drives the real forms and buttons over the DevTools protocol, and checks the dashboard, the counts, the evidence panel, the permission and the self-destruct badge, the revocation, the signature, the password protection, the toast, the filters, the bulk bar, the context menu, the shortcut list, the details panel, the security receipt and the announcement of an arriving share. 23 checks. It also captures the screenshots used in Chapter 4. |
+| `test/browsertest.js` | The interface test. Launches Chrome or Edge in headless mode with two separate profiles, drives the real forms and buttons over the DevTools protocol, and checks the dashboard, the counts, the evidence panel, the permission and the self-destruct badge, the revocation, the signature, the password protection, the toast, the filters, the bulk bar, the context menu, the shortcut list, the details panel, the security receipt, the announcement of an arriving share, the second factor, the confirmation of the password at registration, the recovery phrase panel and the sealing press figure on the sign in page. 27 checks. It also captures the screenshots used in Chapter 4. |
 | `test/livecheck.js` | The read-only check against a server that is already running: the site, the assets, the security headers, the published configuration, the access-code gate and the session gates. 15 checks. |
 | `tools/test-all.js` | Runs every check in the project in the order a reviewer would, and says how many steps passed. 10 steps. |
 | `tools/build-report.js`, `tools/build-deliverables.js`, `tools/build-deck.js` | The builders for the report and the deck. They live outside the application on purpose: the application stays dependency-free. |
@@ -45,7 +45,7 @@ The four commands below were executed on the development machine. The output is 
 
 Command: `npm test`
 
-The test starts the server on an ephemeral port, registers its users, and prints the following twenty-one lines on success.
+The test starts the server on an ephemeral port, registers its users, and prints the following twenty-two lines on success.
 
 ```
 PASS  register + email one-time code verification
@@ -65,13 +65,14 @@ PASS  signing out everywhere ends every session of the account
 PASS  starring is per user, and delete, restore and purge behave
 PASS  the headers and the favicon leave the Google button working
 PASS  the second factor holds the sign-in until the code is given
+PASS  the trail survives the cut, and a share without a fingerprint is refused
 PASS  the client id is published for the browser
 PASS  a valid Google token signs the user in and stores the key pair
 PASS  an existing account keeps the key it already published
 PASS  wrong audience, wrong issuer, expired, tampered, forged and malformed tokens are all refused
 ```
 
-The assertions behind these lines are the ones listed in Table 4.1 as TC-01 to TC-11, TC-16 to TC-27, TC-32 to TC-37, TC-46 to TC-47 and TC-51. A line is printed only after its assertion has passed: each condition is checked with the Node.js `assert` module, and an assertion failure ends the run with a `FAIL` line and a non-zero exit status before the pass lines are printed.
+The assertions behind these lines are the ones listed in Table 4.1 as TC-01 to TC-11, TC-16 to TC-27, TC-32 to TC-37, TC-46 to TC-47, TC-51, TC-57 and TC-58. A line is printed only after its assertion has passed: each condition is checked with the Node.js `assert` module, and an assertion failure ends the run with a `FAIL` line and a non-zero exit status before the pass lines are printed.
 
 ### A2.2 Headless browser test
 
@@ -83,6 +84,9 @@ The test requires Chrome or Edge on the machine. If neither is present, it print
 PASS  alice has a twelve word recovery phrase and a wrapped key on the server
 PASS  bob has a twelve word recovery phrase and a wrapped key on the server
 PASS  two users registered in two separate browser profiles
+PASS  the register form refuses two passwords that differ
+PASS  the sign in page carries the sealing press figure, and the press works
+PASS  the recovery phrase opens when asked for, not on every sign in
 PASS  the Google sign-in button is wired to the client id and the origin the server publishes
 PASS  private key lives in the browser, non-extractable
 PASS  the dashboard counts the share and the evidence panel shows different bytes
@@ -94,7 +98,6 @@ PASS  the recipient dashboard shows the incoming shares, one of them revoked
 PASS  recipient decrypted in the browser, verified and signed
 PASS  a password protected share refuses the wrong password and opens with the right one
 PASS  the sign in screen explains how the encryption works
-PASS  the anatomy is one component, on the sign in page and in the app
 PASS  the card carries a file type chip
 PASS  the actions give a toast
 PASS  the filter chips narrow the view
@@ -105,9 +108,6 @@ PASS  the details panel shows the whole chain for a file
 PASS  the security receipt can be copied
 PASS  a file that arrives is announced
 PASS  the authenticator app turns on the second factor from the page
-PASS  the register form refuses two passwords that differ
-PASS  the recovery phrase opens when asked for, not on every sign in
-PASS  the sign in page carries the sealing press figure
 
 ALL BROWSER CHECKS PASSED
 ```
