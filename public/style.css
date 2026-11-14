@@ -393,18 +393,29 @@ select.input {
   }
 
   .band__tools {
+    /* One row of tools, then the identity row. The DOM order is the visual
+       order, so the tab key follows what the eye does. */
     flex: 1 1 100%;
-    order: 2;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    gap: var(--space-xs);
     max-width: none;
   }
 
   .band__tools .search {
-    flex: 1 1 100%;
+    flex: 1 1 6rem;
+    min-width: 0;
+  }
+
+  .band__tools .btn {
+    white-space: nowrap;
+  }
+
+  /* A phone has no keyboard, so the shortcuts sheet has nothing to say. */
+  #shortcuts-button {
+    display: none;
   }
 
   .session {
-    order: 1;
     width: 100%;
     gap: var(--space-sm);
   }
@@ -490,6 +501,11 @@ select.input {
 .plate__figure {
   font-weight: 800;
   color: var(--color-accent-2);
+  /* A long key must not push the band off its row. */
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* On the ink band the plate cannot be an ink plate, so it becomes an outline. */
@@ -731,7 +747,8 @@ select.input {
 .main__tools {
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
+  /* Three groups with three jobs: filter, sort, layout. Keep them apart. */
+  gap: var(--space-md);
   flex-wrap: wrap;
 }
 
@@ -815,7 +832,7 @@ select.input {
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
   gap: var(--space-md);
   margin-top: var(--space-lg);
 }
@@ -1004,6 +1021,12 @@ html[data-theme="dark"] .file-chip--img {
   overflow-wrap: anywhere;
   min-width: 0;
   flex: 1 1 auto;
+  /* A long name must not stretch its card past its neighbours. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
 }
 
 .card-file__name:hover {
@@ -1089,6 +1112,12 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
   gap: var(--space-2xs);
 }
 
+/* Three actions under a card belong on one line. */
+.card-file__actions .btn {
+  padding-left: var(--space-sm);
+  padding-right: var(--space-sm);
+}
+
 .cards--list .card-file {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -1097,7 +1126,16 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
     "meta badges foot";
   align-items: center;
   gap: var(--space-2xs) var(--space-md);
-  padding: var(--space-sm) var(--space-md);
+  /* A list view is dense rows, not the same boxes in a row. */
+  border: 0;
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+  padding: var(--space-xs) 0;
+}
+
+/* One line in a row: the row carries the name, not the card. */
+.cards--list .card-file__name {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
 }
 
 .cards--list .card-file__top {
@@ -1149,7 +1187,8 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
 .settings__block {
   margin-top: var(--space-lg);
   padding-top: var(--space-md);
-  border-top: var(--rule-hair) solid var(--color-rule);
+  /* A group must not be separated by the same line that separates its rows. */
+  border-top: var(--rule-bar) solid var(--color-ink);
 }
 
 .settings__block h4 {
@@ -1596,9 +1635,11 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
 }
 
 .activity {
-  margin-top: var(--space-xl);
-  border: var(--rule-bar) solid var(--color-ink);
-  background: var(--color-paper-3);
+  /* The audit log is proof, not the subject. It must not out-weigh the
+     file list it sits under. */
+  margin-top: var(--space-2xl);
+  border: var(--rule-hair) solid var(--color-rule);
+  background: transparent;
   padding: var(--space-lg);
 }
 
@@ -1699,7 +1740,7 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
 .preview-panel__body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-sm);
+  gap: var(--space-md);
   padding-top: var(--space-sm);
   overflow-y: auto;
   min-height: 0;
@@ -1707,11 +1748,19 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
 
 .preview-panel__foot {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-xs);
   margin-top: var(--space-md);
   padding-top: var(--space-sm);
   border-top: var(--rule-bar) solid var(--color-rule);
   flex: none;
+}
+
+/* The dismiss control must not be the loudest thing in the dialog. */
+#settings-panel .preview-panel__foot .btn--primary {
+  background: transparent;
+  color: var(--color-ink);
 }
 
 .preview-panel__row {
@@ -2050,4 +2099,33 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
   width: 100%;
   height: 100%;
   border: 0;
+}
+
+/* ---------- phone: the rail scrolls sideways, and says so ---------- */
+
+@media (max-width: 40rem) {
+  .rail__list {
+    scroll-snap-type: x proximity;
+    /* The row runs past the edge. Fade the cut so it reads as "more here",
+       not as a clipped word. */
+    -webkit-mask-image: linear-gradient(to right, currentColor calc(100% - 1.75rem), transparent);
+    mask-image: linear-gradient(to right, currentColor calc(100% - 1.75rem), transparent);
+  }
+
+  .rail__item {
+    scroll-snap-align: start;
+  }
+
+  /* The filter row is one group: it scrolls sideways instead of breaking the
+     group in two and orphaning the rarest filter. */
+  .filter-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  /* The filter row is the most-tapped control on a phone. */
+  .filter-chip,
+  .toolbar-select {
+    min-height: var(--control-height);
+  }
 }

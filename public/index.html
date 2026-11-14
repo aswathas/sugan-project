@@ -616,10 +616,6 @@ const passwordWrappedKey = (await KeyGuard.wrapWithPassword(aes, password)).wrap
         </p>
         <div class="phrase hidden" id="phrase-panel">
           <p class="phrase__words" id="phrase-words"></p>
-          <div class="phrase__actions">
-            <button id="phrase-copy" class="btn btn--small" type="button">Copy the phrase</button>
-            <button id="phrase-close" class="btn btn--small" type="button">Hide</button>
-          </div>
         </div>
         <button id="phrase-open" class="btn btn--small" type="button">Show the recovery phrase</button>
       </div>
@@ -665,6 +661,10 @@ const passwordWrappedKey = (await KeyGuard.wrapWithPassword(aes, password)).wrap
       </div>
     </div>
     <div class="preview-panel__foot">
+      <div class="phrase__actions hidden" id="phrase-actions">
+        <button id="phrase-copy" class="btn btn--small" type="button">Copy the phrase</button>
+        <button id="phrase-close" class="btn btn--small" type="button">Hide</button>
+      </div>
       <button id="settings-done" class="btn btn--primary btn--small" type="button">Done</button>
     </div>
   </div>

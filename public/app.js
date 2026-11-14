@@ -416,6 +416,9 @@ async function uploadBackup() {
 function showPhrase(phrase) {
   if (!phrase) return;
   $('phrase-panel').classList.remove('hidden');
+  // The copy action lives in the dialog's foot, so it stays reachable however
+  // far the phrase is scrolled.
+  $('phrase-actions').classList.remove('hidden');
   $('phrase-words').textContent = phrase;
 }
 
@@ -1201,7 +1204,9 @@ function renderCards(files, direction) {
     } else if (view !== 'trashed') {
       const shareBtn = document.createElement('button');
       shareBtn.type = 'button';
-      shareBtn.className = 'btn btn--primary btn--small';
+      // The rail's New button is the one primary action. Two saturated
+      // buttons for the same job split the call to action.
+      shareBtn.className = 'btn btn--small';
       shareBtn.textContent = 'Share a file';
       shareBtn.addEventListener('click', () => openNewShareFor(null));
       empty.appendChild(shareBtn);
@@ -1289,6 +1294,9 @@ function renderCards(files, direction) {
     name.type = 'button';
     name.className = 'card-file__name';
     name.textContent = file.filename;
+    // The name is clamped to three lines, so the whole of it must still be
+    // reachable.
+    name.title = file.filename;
     name.setAttribute('aria-label', `Preview ${file.filename}`);
     name.addEventListener('click', () => openPreview(file));
     top.appendChild(name);
@@ -1357,7 +1365,9 @@ function renderCards(files, direction) {
     key.title = 'Copy the key fingerprint this file is encrypted to';
     key.setAttribute('aria-label', `Copy key fingerprint for ${file.filename}`);
     key.addEventListener('click', () => copyKeyFor(file, directionKey, key));
-    foot.appendChild(key);
+    // The key chip is a fact about the file, not an action on it. It belongs
+    // with the other facts, so the foot keeps only the actions.
+    badges.appendChild(key);
 
     const actions = document.createElement('div');
     actions.className = 'card-file__actions';
@@ -2163,6 +2173,7 @@ function bindEvents() {
 
   $('phrase-close').addEventListener('click', () => {
     $('phrase-panel').classList.add('hidden');
+    $('phrase-actions').classList.add('hidden');
   });
 
   $('phrase-open').addEventListener('click', () => {
@@ -2581,6 +2592,7 @@ function bindEvents() {
       if (event.key === 'Escape') {
         event.preventDefault();
         $('phrase-panel').classList.add('hidden');
+        $('phrase-actions').classList.add('hidden');
       }
       return;
     }

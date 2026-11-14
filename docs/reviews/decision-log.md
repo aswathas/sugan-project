@@ -242,3 +242,31 @@
   changed files or on the running page, and the design gate is clean.
 - Consequence: the settings dialog fits the screen it ships on, and the header on a phone is
   three rows instead of five.
+
+## D19 - The layout pass, judged on the rendered pages
+
+- Prompt: "/impeccable layout polish", and "continue doing".
+- Decision: the layout pass is done against the running app with four real files in it, not
+  against an empty screen. The defects that the source could not show were found by looking:
+  a long filename wrapped to nine lines and stretched its card past its neighbours, the three
+  actions under a card wrapped onto two rows, the file grid and the audit log below it carried
+  the same weight, the toolbar read as one strip of seven controls, the phone band took four
+  rows and showed them in the opposite order to the DOM, the phone rail cut "Starred" mid
+  word with no hint that it scrolled, and the phone filter row broke its group in two. The
+  card name is now clamped to three lines, the card is wider, the three actions sit on one
+  row, the key chip moved up beside the other facts, the audit log is a hairline, the
+  toolbar's three groups are apart, the phone band is three rows in DOM order, the rail
+  scrolls with a fade, the filter row scrolls as one group, and the copy-the-phrase action
+  sits in the dialog's foot so it can never be scrolled away from.
+- Alternatives considered: (a) the mechanical detector alone, which reads the files and
+  cannot see a card stretched by a filename; (b) a sticky action bar for the recovery
+  phrase, which measured as covering the last two rows of the twelve words; (c) the
+  incumbent rules: the card is a card and the toolbar is a toolbar.
+- Evidence: the app was captured at 1440x900 and 390x844 with four files in it, and the
+  captures were read again afterwards. The card foot was measured in the browser: three
+  buttons, 240px in a 257px row, one row. The phrase box was measured too: the words sit
+  in the scrolling body and the action is in the foot, 72px below the scroll edge. The
+  server suite, the browser suite, the live checks, the design gate and the interface
+  detector on the running page all pass.
+- Consequence: the file grid is even, the reading order is the DOM order, and the highest
+  stakes control in the settings dialog cannot be scrolled out of reach.
