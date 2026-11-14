@@ -89,9 +89,13 @@
                   This account has never had an authenticator, so it gets one now. Scan the code with
                   the phone camera, then enter the six digits the phone shows.
                 </p>
-                <div class="qr" id="login-qr"></div>
-                <p class="key-chip" id="login-secret"></p>
-                <pre class="code-sample__pre"><code id="login-uri"></code></pre>
+                <div class="qr-row">
+                  <div class="qr" id="login-qr"></div>
+                  <div class="qr-row__side">
+                    <p class="key-chip" id="login-secret"></p>
+                    <pre class="code-sample__pre"><code id="login-uri"></code></pre>
+                  </div>
+                </div>
               </div>
             </div>
             <button class="btn btn--primary" type="submit">Sign in</button>
@@ -628,11 +632,15 @@ const passwordWrappedKey = (await KeyGuard.wrapWithPassword(aes, password)).wrap
             Open Google Authenticator or any other authenticator app, add a new account, and scan this
             code with the phone camera:
           </p>
-          <div class="qr" id="totp-qr"></div>
-          <p class="note">Or enter this key by hand:</p>
-          <p class="key-chip" id="totp-secret"></p>
-          <p class="note">Or paste this address into the app:</p>
-          <pre class="code-sample__pre"><code id="totp-uri"></code></pre>
+          <div class="qr-row">
+            <div class="qr" id="totp-qr"></div>
+            <div class="qr-row__side">
+              <p class="note">Or enter this key by hand:</p>
+              <p class="key-chip" id="totp-secret"></p>
+              <p class="note">Or paste this address into the app:</p>
+              <pre class="code-sample__pre"><code id="totp-uri"></code></pre>
+            </div>
+          </div>
         </div>
         <div class="field">
           <label class="route__label" for="totp-code">Six digit code</label>

@@ -172,3 +172,7 @@
 | `test/browsertest.js` | The sign-in plays the phone and proves the factor; the second factor is turned off and on again from the settings dialog; the phrase opens inside the dialog | The behaviour changed, so the checks changed | 31 checks pass |
 | `test/selftest.js` | The sign-in goes through the enrolment path; the account is refused until the right code arrives; a factor that is turned off is given again at the next sign-in | The behaviour changed, so the checks changed | 22 checks pass |
 | `docs/screenshots/07-journey.png` | The new scene, captured from the running page | The report and the deck will need a picture of it | Captured by the check script |
+
+|---|---|---|---|
+| `public/style.css` | The dialog caps its height and its body scrolls; the rows stack on a narrow screen; the twelve words wrap; the code the phone reads sits beside the key; the dark theme's muted grey raised to pass the body text mark; the phone header wraps to three rows and drops the public key plate, which is in the settings dialog | The settings dialog ran off the edge of a phone and off the top of a desktop window, and the phone header took five rows | The app was captured at 1440x900 and 390x844 before and after; the detector is clean; the design gate passes |
+| `public/index.html` | The QR and the key put in one row, in the settings dialog and in the sign-in enrolment | The code was under a wall of text and the dialog could not scroll it into view | The browser suite finds the drawn code |

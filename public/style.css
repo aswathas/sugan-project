@@ -34,7 +34,7 @@ html[data-theme="dark"] {
   --color-paper-3: oklch(28% 0.014 262);
   --color-ink: oklch(93% 0.006 250);
   --color-ink-2: oklch(78% 0.010 258);
-  --color-muted: oklch(66% 0.014 260);
+  --color-muted: oklch(72% 0.014 260);
   --color-rule: oklch(38% 0.014 262);
   --color-ink-rule: oklch(48% 0.014 262);
   --color-accent: oklch(51% 0.22 264);
@@ -387,6 +387,54 @@ select.input {
 }
 
 @media (max-width: 40rem) {
+  .band__inner {
+    padding: var(--space-sm) var(--space-md);
+    gap: var(--space-sm);
+  }
+
+  .band__tools {
+    flex: 1 1 100%;
+    order: 2;
+    flex-wrap: wrap;
+    max-width: none;
+  }
+
+  .band__tools .search {
+    flex: 1 1 100%;
+  }
+
+  .session {
+    order: 1;
+    width: 100%;
+    gap: var(--space-sm);
+  }
+
+  .session .plate--on-ink {
+    display: none;
+  }
+
+  .session__who {
+    flex: 1 1 auto;
+  }
+
+  .preview-backdrop {
+    padding: var(--space-sm);
+  }
+
+  .preview-panel {
+    max-height: calc(100vh - 2 * var(--space-sm));
+    padding: var(--space-md);
+  }
+
+  .preview-panel__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3xs);
+  }
+
+  .qr-row {
+    flex-direction: column;
+  }
+
   .choice__cells--four {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1119,12 +1167,25 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
 
 /* The code the phone's camera reads when it is enrolled. */
 .qr {
-  width: 11rem;
-  height: 11rem;
-  margin: var(--space-md) 0;
+  width: 8.5rem;
+  height: 8.5rem;
+  flex: none;
   padding: var(--space-xs);
   border: var(--rule-bar) solid var(--color-ink);
   background: var(--color-paper);
+}
+
+.qr-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  margin: var(--space-sm) 0;
+}
+
+.qr-row__side {
+  display: grid;
+  gap: var(--space-2xs);
+  min-width: 0;
 }
 
 .qr:empty {
@@ -1599,10 +1660,17 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
 .preview-panel {
   width: 100%;
   max-width: 34rem;
+  max-height: calc(100vh - 2 * var(--space-lg));
+  display: flex;
+  flex-direction: column;
   border: var(--rule-bar) solid var(--color-ink);
   background: var(--color-paper-3);
   padding: var(--space-lg);
   box-shadow: var(--shadow-card);
+}
+
+.preview-panel--small {
+  max-width: 24rem;
 }
 
 .preview-panel__head {
@@ -1612,6 +1680,7 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
   gap: var(--space-md);
   padding-bottom: var(--space-sm);
   border-bottom: var(--rule-bar) solid var(--color-ink);
+  flex: none;
 }
 
 
@@ -1629,8 +1698,11 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
 
 .preview-panel__body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-sm);
   padding-top: var(--space-sm);
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .preview-panel__foot {
@@ -1639,6 +1711,7 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
   margin-top: var(--space-md);
   padding-top: var(--space-sm);
   border-top: var(--rule-bar) solid var(--color-rule);
+  flex: none;
 }
 
 .preview-panel__row {
@@ -1828,6 +1901,7 @@ html[data-theme="dark"] .card-file__star[aria-pressed="true"] svg {
   font-weight: 800;
   line-height: 1.6;
   word-spacing: var(--space-sm);
+  overflow-wrap: anywhere;
 }
 
 .phrase__actions {

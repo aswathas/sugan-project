@@ -224,3 +224,21 @@
 - Evidence: the browser suite opens the settings dialog and reads the phrase and the factor
   inside it, and the design gate passes.
 - Consequence: the header is a wordmark, a search box, two buttons and the name of the person.
+
+## D18 - The polish pass, looked at on the screens it ships on
+
+- Prompt: "also /impeccable polish".
+- Decision: the polish pass is done against the running app at two sizes, not against the
+  source. The settings dialog was the defect: on a phone it ran off both edges and the text was
+  cut, and on a desktop it was taller than the window, so the head of the dialog was above the
+  fold. The panel now caps its height, its body scrolls, its rows stack on a narrow screen, the
+  twelve words wrap, and the code the phone reads sits beside the key instead of under a wall of
+  text. The dark theme's muted grey was short of the 4.5:1 body text mark and was raised.
+- Alternatives considered: (a) the regex detector alone, which reads the files and cannot see a
+  dialog that runs off the screen; (b) a separate mobile layout for the dialog, which is more
+  code for the same result; (c) the incumbent rules: the dialog scrolls, the rows stack.
+- Evidence: the app was captured at 1440x900 and 390x844 before and after, and the desktop and
+  phone settings dialogs were read again afterwards. The mechanical detector finds nothing on the
+  changed files or on the running page, and the design gate is clean.
+- Consequence: the settings dialog fits the screen it ships on, and the header on a phone is
+  three rows instead of five.
