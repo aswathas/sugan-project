@@ -334,14 +334,13 @@ async function recoverKeyIfAsked(username) {
 }
 
 // The wrapped private key goes to the server so a lost device can be rescued.
-// The server holds it encrypted and cannot read it. If the upload fails the
-// user must know, because this blob is the only way a new device can be
-// rescued, and the phrase is still shown either way.
+// The server holds it encrypted and cannot read it. The phrase is shown when
+// it is first created and when the backup fails, not on every sign in: a panel
+// that opens every time is a panel nobody reads.
 async function uploadBackup() {
   if (!myKeys || !myKeys.backup) return;
   try {
     await api('/api/keys/backup', { method: 'POST', body: myKeys.backup });
-    showPhrase(myKeys.phrase);
   } catch (err) {
     showPhrase(myKeys.phrase);
     setMainStatus(
@@ -2037,6 +2036,12 @@ function bindEvents() {
       const username = $('register-username').value.trim();
       const email = $('register-email').value.trim();
       const password = $('register-password').value;
+      const confirm = $('register-confirm').value;
+      if (password !== confirm) {
+        $('auth-error').textContent = 'the two passwords are not the same';
+        $('register-confirm').focus();
+        return;
+      }
       const { pair, publicKeyB64 } = await generateKeyPair(true);
       const signing = await KeyGuard.generateSigningKey();
       const phrase = KeyGuard.randomPhrase(12);
@@ -2047,6 +2052,7 @@ function bindEvents() {
           username,
           email,
           password,
+          confirmPassword: confirm,
           publicKey: publicKeyB64,
           signingKey: signing.publicKeyB64,
           accessCode: $('register-access-code').value.trim(),
@@ -2093,6 +2099,8 @@ function bindEvents() {
       showApp();
       await refresh();
       await uploadBackup();
+      // The phrase is shown once, here, when it is first made.
+      showPhrase(myKeys && myKeys.phrase);
     } catch (err) {
       $('auth-error').textContent = err.message;
     }
@@ -2101,6 +2109,19 @@ function bindEvents() {
   $('recovery-toggle').addEventListener('click', () => {
     $('recovery-field').classList.toggle('hidden');
     $('recovery-phrase').focus();
+  });
+
+  $('phrase-close').addEventListener('click', () => {
+    $('phrase-panel').classList.add('hidden');
+  });
+
+  $('phrase-open').addEventListener('click', () => {
+    if (!myKeys || !myKeys.phrase) {
+      setMainStatus('There is no recovery phrase on this device.', 'error');
+      return;
+    }
+    showPhrase(myKeys.phrase);
+    $('phrase-panel').scrollIntoView({ block: 'center' });
   });
 
   $('phrase-copy').addEventListener('click', async () => {
@@ -2115,6 +2136,19 @@ function bindEvents() {
 
   $('tab-login').addEventListener('click', () => setTab('login'));
   $('tab-register').addEventListener('click', () => setTab('register'));
+
+  // The close of the anatomy is the action: it turns to the register tab.
+  const closeRegister = $('close-register');
+  if (closeRegister) {
+    closeRegister.addEventListener('click', () => {
+      setTab('register');
+      const username = $('register-username');
+      if (username) {
+        username.scrollIntoView({ block: 'center' });
+        username.focus();
+      }
+    });
+  }
 
   $('logout').addEventListener('click', async () => {
     await api('/api/logout', { method: 'POST' });
@@ -2447,10 +2481,12 @@ function bindEvents() {
       return;
     }
 
-    if (window.Anatomy && window.Anatomy.isOpen()) {
+    // The recovery phrase panel sits over the workspace, so Escape closes it
+    // before anything else happens.
+    if ($('phrase-panel') && !$('phrase-panel').classList.contains('hidden')) {
       if (event.key === 'Escape') {
         event.preventDefault();
-        window.Anatomy.close();
+        $('phrase-panel').classList.add('hidden');
       }
       return;
     }

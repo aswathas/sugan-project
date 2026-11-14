@@ -39,6 +39,12 @@ const steps = [
     env: { NODE_PATH: `${NODE_MODULES}/pptxbuild/node_modules` },
   },
   {
+    name: 'the figure',
+    cmd: process.execPath,
+    args: ['tools/build-figure.mjs'],
+    env: {},
+  },
+  {
     name: 'the report',
     cmd: process.execPath,
     args: ['tools/build-deliverables.js'],

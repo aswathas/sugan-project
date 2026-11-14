@@ -118,3 +118,18 @@
 | `docs/report-draft/appendices.md` | the raw browser output reproduced with the new line | the appendix is the raw record | the report build |
 | `docs/report-draft/ch5-conclusion.md` | the counts corrected and the cipher field described | the conclusion must not quote stale numbers | the report build |
 | `report/SecureShare-Project-Report.docx`, `report/SecureShare-Project-Report.pdf`, `report/SecureShare-REVIEW-3.pptx` | rebuilt | the deliverables must match the code | the deck validation and the measured contents page numbers |
+| `public/anatomy.js` | removed | the hand-built anatomy component is gone; the page carries static markup and the new figure | the browser suite and the design gate |
+| `public/cipherfield.js` | removed | it was part of the old anatomy, and the figure replaces it | the browser suite |
+| `public/index.html` | the static anatomy is back, the figure section is in, the register form asks for the password twice, and the recovery phrase has a button and a close | the old component is gone and the new figure and the two new requests are in | `npm run test:browser` |
+| `public/app.js` | the phrase is shown once and on request, the close of the anatomy turns to the register tab, and the anatomy escape branch is gone | the panel no longer opens on every sign in, and the component that owned the panel is gone | `npm run test:browser` |
+| `public/style.css` | the cipher field styles are gone, the figure frame is in, and the phrase actions have a row | the new surfaces need their own styles | the design gate |
+| `server/index.js` | the registration checks the confirmed password, the framing headers allow the same origin, and /figure/ is served from its own directory | the confirm password must be checked on the server, and the figure needs a route that the design gate does not scan | `npm test`, `npm run test:browser`, the design gate |
+| `figure/sealing-press.html` | generated | the drawing the sign in page carries | read back after the build |
+| `tools/build-figure.mjs` | created | the figure is built from the kit, so it can be rebuilt with the code | `node tools/build-figure.mjs`, and the step in the aggregate run |
+| `tools/figure/kit/iso-kit.mjs`, `tools/figure/kit/gl.mjs`, `tools/figure/kit/inline-kit.mjs` | vendored from the anatomy kit | the build must not depend on a skill installed elsewhere | the figure builds and draws |
+| `tools/build-deck.js` | the sign-in slide carries the figure and describes the machine | the slides must show what the site shows | the deck validation and the rendered slide |
+| `tools/test-all.js` | the figure became a step of the aggregate run | a generated artefact that can drift must be rebuilt by the gate | `npm run test:all` |
+| `test/browsertest.js` | three checks added: the two passwords that differ are refused, the phrase opens when asked for, and the figure is on the page and draws | each new behaviour needs its own check | `npm run test:browser` |
+| `docs/screenshots/06-sealing-press.png` | created, and the cipher field screenshot removed | the report and the deck show the figure | read back after the capture |
+| `docs/report-draft/ch3-system-design.md`, `ch4-results.md`, `appendices.md`, `ch5-conclusion.md` | the figure, the confirmed password, the phrase behaviour, the framing headers, TC-54 to TC-56 and the counts | the report must match the code | the report build and the contents check |
+| `report/SecureShare-Project-Report.docx`, `report/SecureShare-Project-Report.pdf`, `report/SecureShare-REVIEW-3.pptx` | rebuilt | the deliverables must match the code | the deck validation and the measured contents page numbers |

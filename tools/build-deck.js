@@ -407,18 +407,18 @@ for (const [file, title, cap] of modelSlides) {
   bullets(
     slide,
     [
-      'The anatomy of the product is one component: the workspace, three named moments, the real encryption code, the questions a visitor asks, and the action at the close.',
-      'It is mounted twice: on the sign-in page, and in the how-it-works panel inside the workspace.',
-      'The cipher field is the live piece. A WebGL canvas draws the wave of encryption crossing the file, and the bytes printed under it are the ones this browser really produced a moment earlier.',
+      'The sign-in page explains the product: the workspace, three named moments, the real encryption code, the questions a visitor asks, and the action at the close.',
+      'The drawing is an isometric machine, built with the anatomy kit: the carriage brings the file to the press, the key is turned on the dial, the head comes down and presses the file into a sealed capsule.',
+      'The capsule slides off the rail into the hopper, and the hopper is the server. It only ever holds capsules; the file itself was consumed by the seal.',
       'The second factor is set up from the same page: an authenticator app, a secret shown once, and an account that then needs the password and the code.',
     ],
-    { x: 0.9, y: 1.75, w: 5.0, h: 4.6, fontSize: 11 }
+    { x: 0.9, y: 1.75, w: 5.4, h: 4.6, fontSize: 11 }
   );
-  slide.addImage({ path: path.join(SHOTS, '06-cipher-field.png'), x: 6.25, y: 1.85, w: 6.25, h: 2.74 });
-  caption(slide, 'The cipher field, captured from the running site.', 6.25, 4.65, 6.25);
-  slide.addShape(pptx.ShapeType.rect, { x: 6.25, y: 5.15, w: 6.25, h: 1.45, fill: { color: INK } });
-  slide.addText('Behind the amber wave the bytes are random; ahead of it they are still ordered. The hex under the drawing is the ciphertext this browser produced, not a picture of one.', {
-    x: 6.5, y: 5.35, w: 5.75, h: 1.1,
+  slide.addImage({ path: path.join(SHOTS, '06-sealing-press.png'), x: 6.6, y: 1.8, w: 5.9, h: 3.47 });
+  caption(slide, 'The sealing press, captured from the running site.', 6.6, 5.32, 5.9);
+  slide.addShape(pptx.ShapeType.rect, { x: 6.6, y: 5.72, w: 5.9, h: 1.15, fill: { color: INK } });
+  slide.addText('The object is the explanation: a machine whose working is the idea, with every part drawn to scale and every number true.', {
+    x: 6.85, y: 5.92, w: 5.4, h: 0.8,
     fontFace: FONT, fontSize: 11, color: PAPER, margin: 0, lineSpacingMultiple: 1.2,
   });
 }

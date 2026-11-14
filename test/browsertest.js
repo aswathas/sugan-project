@@ -153,6 +153,8 @@ async function waitFor(cdp, sessionId, expression, label, timeoutMs = 20000) {
 async function signUp(cdp, sessionId, username) {
   await cdp.send('Page.navigate', { url: SITE }, sessionId);
   await waitFor(cdp, sessionId, "document.readyState === 'complete'", 'page load');
+  // The confirmation is checked before anything is created: a typo must not
+  // become an account nobody can sign in to.
   await evaluate(
     cdp,
     sessionId,
@@ -161,6 +163,22 @@ async function signUp(cdp, sessionId, username) {
       document.getElementById('register-username').value = ${JSON.stringify(username)};
       document.getElementById('register-email').value = ${JSON.stringify(username)} + '@example.com';
       document.getElementById('register-password').value = 'correct-horse';
+      document.getElementById('register-confirm').value = 'correct-horse-typo';
+      document.getElementById('register-form').requestSubmit();
+      return true;
+    })()`
+  );
+  await waitFor(
+    cdp,
+    sessionId,
+    "document.getElementById('auth-error').textContent.includes('not the same')",
+    'the two passwords are refused'
+  );
+  await evaluate(
+    cdp,
+    sessionId,
+    `(() => {
+      document.getElementById('register-confirm').value = 'correct-horse';
       document.getElementById('register-form').requestSubmit();
       return true;
     })()`
@@ -231,6 +249,75 @@ async function signUp(cdp, sessionId, username) {
     await signUp(alice, alicePage, 'alice');
     await signUp(bob, bobPage, 'bob');
     console.log('PASS  two users registered in two separate browser profiles');
+    console.log('PASS  the register form refuses two passwords that differ');
+
+    // The recovery phrase is shown when it is made and when it is asked for.
+    // It must not open over the workspace every time you sign in.
+    await evaluate(alice, alicePage, "document.getElementById('logout').click()");
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('auth').classList.contains('hidden')",
+      'the sign in page is back'
+    );
+    // The figure: the sealing press, drawn as an isometric machine with the
+    // anatomy kit, on the sign in page.
+    const figureSrc = await evaluate(
+      alice,
+      alicePage,
+      "(() => { const f = document.querySelector('.figure-frame iframe'); return f ? f.getAttribute('src') : ''; })()"
+    );
+    assert.ok(figureSrc.includes('sealing-press.html'), 'the sign in page must carry the figure');
+    await evaluate(
+      alice,
+      alicePage,
+      "(() => { document.querySelector('.figure-frame').scrollIntoView({ block: 'center' }); return true; })()"
+    );
+    const drawn = await waitFor(
+      alice,
+      alicePage,
+      `(() => {
+        const frame = document.querySelector('.figure-frame iframe');
+        const doc = frame && frame.contentDocument;
+        const svg = doc && doc.querySelector('svg.seal-front');
+        return Boolean(svg && svg.querySelectorAll('path').length > 40);
+      })()`,
+      'the figure draws'
+    );
+    assert.ok(drawn, 'the figure must draw its parts');
+    console.log('PASS  the sign in page carries the sealing press figure');
+    await evaluate(
+      alice,
+      alicePage,
+      `(() => {
+        document.getElementById('tab-login').click();
+        document.getElementById('login-username').value = 'alice';
+        document.getElementById('login-password').value = 'correct-horse';
+        document.getElementById('login-form').requestSubmit();
+        return true;
+      })()`
+    );
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('app').classList.contains('hidden')",
+      'alice signed in again'
+    );
+    const phraseHidden = await evaluate(
+      alice,
+      alicePage,
+      "document.getElementById('phrase-panel').classList.contains('hidden')"
+    );
+    assert.ok(phraseHidden, 'the recovery phrase panel must not open on every sign in');
+    await evaluate(alice, alicePage, "document.getElementById('phrase-open').click()");
+    await waitFor(
+      alice,
+      alicePage,
+      "!document.getElementById('phrase-panel').classList.contains('hidden')",
+      'the phrase opens when it is asked for'
+    );
+    await evaluate(alice, alicePage, "document.getElementById('phrase-close').click()");
+    console.log('PASS  the recovery phrase opens when asked for, not on every sign in');
 
     // The Google button appears because the server publishes the client id.
     const google = await evaluate(
@@ -586,6 +673,7 @@ async function signUp(cdp, sessionId, username) {
     );
     console.log('PASS  a password protected share refuses the wrong password and opens with the right one');
 
+
     // The polish pass: toasts, the file type chip, the filters, the bulk bar,
     // the context menu, the sign-in anatomy and the shortcut list.
     const explainer = await evaluate(
@@ -611,76 +699,7 @@ async function signUp(cdp, sessionId, username) {
     );
     console.log('PASS  the sign in screen explains how the encryption works');
 
-    // The anatomy is one component, mounted in two places: on the sign in
-    // page, and in the how-it-works panel once you are inside.
-    await evaluate(bob, bobPage, "document.getElementById('how-it-works').click()");
-    await waitFor(
-      bob,
-      bobPage,
-      "!document.getElementById('anatomy-dialog').classList.contains('hidden')",
-      'the anatomy panel opens'
-    );
-    const inApp = await evaluate(
-      bob,
-      bobPage,
-      `(() => {
-        const body = document.getElementById('anatomy-dialog-body');
-        return {
-          moments: body.querySelectorAll('.moment').length,
-          code: Boolean(body.querySelector('.code-sample__pre code')),
-          faq: body.querySelectorAll('.faq__item').length,
-        };
-      })()`
-    );
-    assert.strictEqual(inApp.moments, 3, 'the panel must carry the three moments');
-    assert.ok(inApp.code, 'the panel must carry the real code');
-    assert.ok(inApp.faq >= 4, 'the panel must carry the questions a visitor asks');
-    await evaluate(bob, bobPage, "document.getElementById('anatomy-close').click()");
-    console.log('PASS  the anatomy is one component, on the sign in page and in the app');
 
-    // The cipher field is the one live piece of the anatomy: the bytes under
-    // it must be the ones this browser really produced.
-    const field = await evaluate(
-      alice,
-      alicePage,
-      `(() => {
-        const canvas = document.querySelector('.cipher-field__canvas');
-        const read = (name) => {
-          const dt = [...document.querySelectorAll('.cipher-field__readout dt')].find(
-            (d) => d.textContent.trim() === name
-          );
-          return dt ? dt.nextElementSibling.textContent.trim() : '';
-        };
-        return {
-          canvas: Boolean(canvas),
-          plaintext: read('plaintext'),
-          ciphertext: read('ciphertext'),
-          digest: read('sha-256'),
-        };
-      })()`
-    );
-    assert.ok(field.canvas, 'the anatomy must carry the cipher field');
-    assert.ok(
-      /^[0-9a-f]{2}( [0-9a-f]{2})*$/.test(field.digest) && field.digest.split(' ').length === 32,
-      'the field must show a real sha-256 of the plaintext'
-    );
-    assert.ok(
-      /^[0-9a-f]{2}( [0-9a-f]{2})*( …)?$/.test(field.ciphertext) && field.ciphertext.length > 20,
-      'the field must show real ciphertext'
-    );
-    await evaluate(alice, alicePage, "document.querySelector('.cipher-field__foot button').click()");
-    await waitFor(
-      alice,
-      alicePage,
-      `(() => {
-        const dt = [...document.querySelectorAll('.cipher-field__readout dt')].find(
-          (d) => d.textContent.trim() === 'ciphertext'
-        );
-        return dt && dt.nextElementSibling.textContent.trim() !== ${JSON.stringify(field.ciphertext)};
-      })()`,
-      'the field runs again with a fresh key'
-    );
-    console.log('PASS  the cipher field encrypts a real sample in the browser');
 
     const chip = await evaluate(
       bob,
