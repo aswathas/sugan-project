@@ -5,12 +5,14 @@ const path = require('path');
 const crypto = require('crypto');
 const { load, save, writeBlob, readBlob } = require('./store');
 const { hashPassword, verifyPassword, newToken } = require('./crypto');
+const { deliverOtp } = require('./mailer');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const MAX_BODY = 64 * 1024 * 1024;
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const OTP_TTL_MS = 10 * 60 * 1000;
 
 const db = load();
 
@@ -84,9 +86,12 @@ async function handleApi(req, res, url) {
   const route = `${req.method} ${url.pathname}`;
 
   if (route === 'POST /api/register') {
-    const { username, password, publicKey } = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const { username, email, password, publicKey } = JSON.parse((await readBody(req)).toString('utf8') || '{}');
     if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(username || '')) {
       return json(res, 400, { error: 'username must be 3-32 letters, digits, dot, dash or underscore' });
+    }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email || '')) {
+      return json(res, 400, { error: 'a valid email address is required' });
     }
     if (typeof password !== 'string' || password.length < 6) {
       return json(res, 400, { error: 'password must be at least 6 characters' });
@@ -97,10 +102,52 @@ async function handleApi(req, res, url) {
     if (db.users[username]) {
       return json(res, 409, { error: 'username already taken' });
     }
+    if (Object.values(db.users).some((u) => u.email === email)) {
+      return json(res, 409, { error: 'that email is already registered' });
+    }
     const { salt, hash } = hashPassword(password);
-    db.users[username] = { username, salt, hash, publicKey, createdAt: Date.now() };
+    const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+    const otp = hashPassword(code);
+    db.users[username] = {
+      username,
+      email,
+      salt,
+      hash,
+      publicKey,
+      verified: false,
+      otp: { salt: otp.salt, hash: otp.hash, expires: Date.now() + OTP_TTL_MS },
+      createdAt: Date.now(),
+    };
     save(db);
-    return json(res, 201, { username });
+    const delivery = await deliverOtp(email, code);
+    return json(res, 201, {
+      username,
+      needsVerification: true,
+      delivery: delivery.mode,
+      // In console mode the code never leaves this machine; showing it keeps the
+      // demo runnable without any email account.
+      demoCode: delivery.mode === 'console' ? code : undefined,
+    });
+  }
+
+  if (route === 'POST /api/verify-otp') {
+    const { username, code } = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    const user = db.users[username];
+    if (!user) return json(res, 404, { error: 'no such user' });
+    if (user.verified) return json(res, 400, { error: 'account is already verified' });
+    if (!user.otp || user.otp.expires < Date.now()) {
+      return json(res, 400, { error: 'code expired — register again' });
+    }
+    if (!verifyPassword(String(code || ''), user.otp.salt, user.otp.hash)) {
+      return json(res, 401, { error: 'wrong code' });
+    }
+    user.verified = true;
+    delete user.otp;
+    const token = newToken();
+    db.sessions[token] = { username, expires: Date.now() + SESSION_TTL_MS };
+    save(db);
+    res.setHeader('Set-Cookie', `sid=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`);
+    return json(res, 200, { username });
   }
 
   if (route === 'POST /api/login') {
@@ -108,6 +155,9 @@ async function handleApi(req, res, url) {
     const user = db.users[username];
     if (!user || !verifyPassword(String(password || ''), user.salt, user.hash)) {
       return json(res, 401, { error: 'wrong username or password' });
+    }
+    if (!user.verified) {
+      return json(res, 403, { error: 'verify your email with the code first' });
     }
     const token = newToken();
     db.sessions[token] = { username, expires: Date.now() + SESSION_TTL_MS };

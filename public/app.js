@@ -12,6 +12,7 @@ const RSA = {
 let me = null;
 let myKeys = null;
 let users = [];
+let pendingUser = null;
 
 /* ---------------- base64 ---------------- */
 
@@ -129,11 +130,45 @@ $('register-form').addEventListener('submit', async (event) => {
   $('auth-error').textContent = '';
   try {
     const username = $('register-username').value.trim();
+    const email = $('register-email').value.trim();
     const password = $('register-password').value;
     const { pair, publicKeyB64 } = await generateKeyPair();
-    await api('/api/register', { method: 'POST', body: { username, password, publicKey: publicKeyB64 } });
+    const result = await api('/api/register', {
+      method: 'POST',
+      body: { username, email, password, publicKey: publicKeyB64 },
+    });
     await idbPut(username, { privateKey: pair.privateKey, publicKey: pair.publicKey, publicKeyB64 });
-    await signIn(username, password);
+
+    pendingUser = username;
+    $('verify-email').textContent = email;
+    if (result.demoCode) {
+      $('verify-note').textContent =
+        `Demo mode — no email service is configured, so the code is ${result.demoCode}. With a mail service set up it would arrive by email.`;
+      $('verify-code').value = result.demoCode;
+    } else {
+      $('verify-note').textContent = 'We sent a 6-digit code to your email. It expires in 10 minutes.';
+    }
+    $('tabs').classList.add('hidden');
+    $('login-form').classList.add('hidden');
+    $('register-form').classList.add('hidden');
+    $('verify-form').classList.remove('hidden');
+  } catch (err) {
+    $('auth-error').textContent = err.message;
+  }
+});
+
+$('verify-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  $('auth-error').textContent = '';
+  try {
+    const session = await api('/api/verify-otp', {
+      method: 'POST',
+      body: { username: pendingUser, code: $('verify-code').value.trim() },
+    });
+    me = session.username;
+    myKeys = (await idbGet(me)) || null;
+    showApp();
+    await refresh();
   } catch (err) {
     $('auth-error').textContent = err.message;
   }

@@ -2,6 +2,9 @@
 // End-to-end check of the share flow, using Node's WebCrypto (the same API the
 // browser uses): two users, a file encrypted before upload, shared to one of
 // them, decrypted by them. A third user must not be able to read it.
+//
+// Also covers the registration authentication: email + one-time code before the
+// account can be used.
 
 const assert = require('node:assert');
 const fs = require('node:fs');
@@ -49,9 +52,24 @@ async function makeUser(username) {
   return { username, pair, publicKey: b64(spki) };
 }
 
-async function signIn(username, password) {
-  const res = await call('/api/login', { method: 'POST', body: { username, password } });
-  assert.strictEqual(res.status, 200, `login failed for ${username}: ${res.text}`);
+async function register(user) {
+  const res = await call('/api/register', {
+    method: 'POST',
+    body: {
+      username: user.username,
+      email: `${user.username}@example.com`,
+      password: 'correct-horse',
+      publicKey: user.publicKey,
+    },
+  });
+  assert.strictEqual(res.status, 201, `register failed for ${user.username}: ${res.text}`);
+  assert.ok(res.body.demoCode, 'console mail mode should hand back the code for the demo');
+  return res.body.demoCode;
+}
+
+async function verify(username, code) {
+  const res = await call('/api/verify-otp', { method: 'POST', body: { username, code } });
+  assert.strictEqual(res.status, 200, `verify failed for ${username}: ${res.text}`);
   return res.headers.get('set-cookie').split(';')[0];
 }
 
@@ -63,17 +81,26 @@ async function signIn(username, password) {
   const carol = await makeUser('carol');
   const plaintext = Buffer.from('%PDF-1.4 pretend this is a confidential syllabus');
 
-  for (const user of [alice, bob, carol]) {
-    const res = await call('/api/register', {
-      method: 'POST',
-      body: { username: user.username, password: 'correct-horse', publicKey: user.publicKey },
-    });
-    assert.strictEqual(res.status, 201, `register failed for ${user.username}: ${res.text}`);
-  }
+  const aliceCode = await register(alice);
+  const bobCode = await register(bob);
+  const carolCode = await register(carol);
 
-  const aliceCookie = await signIn('alice', 'correct-horse');
-  const bobCookie = await signIn('bob', 'correct-horse');
-  const carolCookie = await signIn('carol', 'correct-horse');
+  // An account is useless until the email code is verified.
+  const earlyLogin = await call('/api/login', {
+    method: 'POST',
+    body: { username: 'alice', password: 'correct-horse' },
+  });
+  assert.strictEqual(earlyLogin.status, 403, 'unverified accounts must not be able to sign in');
+
+  const wrongCode = await call('/api/verify-otp', {
+    method: 'POST',
+    body: { username: 'alice', code: '000000' === aliceCode ? '111111' : '000000' },
+  });
+  assert.strictEqual(wrongCode.status, 401, 'a wrong code must be rejected');
+
+  const aliceCookie = await verify('alice', aliceCode);
+  const bobCookie = await verify('bob', bobCode);
+  const carolCookie = await verify('carol', carolCode);
 
   const badLogin = await call('/api/login', { method: 'POST', body: { username: 'alice', password: 'wrong' } });
   assert.strictEqual(badLogin.status, 401, 'wrong password must be rejected');
@@ -135,6 +162,8 @@ async function signIn(username, password) {
   const decrypted = Buffer.from(await subtle.decrypt({ name: 'AES-GCM', iv: unb64(meta.body.iv) }, aesForBob, stored));
   assert.strictEqual(decrypted.toString('utf8'), plaintext.toString('utf8'), 'decrypted file must match the original');
 
+  console.log('PASS  register + email one-time code verification');
+  console.log('PASS  unverified account cannot sign in, wrong code rejected');
   console.log('PASS  register + login + keypair publish');
   console.log('PASS  encrypt in browser, server stores ciphertext only');
   console.log('PASS  recipient decrypts to the original bytes');
